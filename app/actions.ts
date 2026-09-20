@@ -9,6 +9,7 @@ import {
   updateConversation,
 } from "@/lib/db";
 import { parseExport, parseTranscript } from "@/lib/importers";
+import { requireUser } from "@/lib/session";
 import { isRole, isSource, type Source } from "@/lib/types";
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
@@ -31,9 +32,10 @@ function sourceOf(raw: FormDataEntryValue | null): Source {
 
 /** Create a conversation, optionally seeded from a pasted transcript, then open it. */
 export async function createConversationAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await requireUser();
   let id: string;
   try {
-    const convo = await createConversation({
+    const convo = await createConversation(user.id, {
       title: String(formData.get("title") ?? ""),
       source: sourceOf(formData.get("source")),
       tags: parseTags(formData.get("tags")),
@@ -41,7 +43,7 @@ export async function createConversationAction(_prev: ActionResult | null, formD
     id = convo.id;
     const transcript = String(formData.get("transcript") ?? "");
     if (transcript.trim()) {
-      await addMessages(id, parseTranscript(transcript));
+      await addMessages(user.id, id, parseTranscript(transcript));
     }
   } catch (err) {
     return fail(err);
@@ -56,8 +58,9 @@ export async function addMessageAction(_prev: ActionResult | null, formData: For
   const content = String(formData.get("content") ?? "");
   if (!conversationId || !isRole(role)) return { ok: false, error: "Invalid message" };
   if (!content.trim()) return { ok: false, error: "Message is empty" };
+  const user = await requireUser();
   try {
-    await addMessages(conversationId, [{ role, content }]);
+    await addMessages(user.id, conversationId, [{ role, content }]);
   } catch (err) {
     return fail(err);
   }
@@ -66,8 +69,9 @@ export async function addMessageAction(_prev: ActionResult | null, formData: For
 }
 
 export async function renameConversationAction(id: string, title: string, tags: string[]): Promise<ActionResult> {
+  const user = await requireUser();
   try {
-    await updateConversation(id, { title, tags });
+    await updateConversation(user.id, id, { title, tags });
   } catch (err) {
     return fail(err);
   }
@@ -76,7 +80,8 @@ export async function renameConversationAction(id: string, title: string, tags: 
 }
 
 export async function deleteConversationAction(id: string): Promise<void> {
-  await dbDeleteConversation(id);
+  const user = await requireUser();
+  await dbDeleteConversation(user.id, id);
   revalidatePath("/", "layout");
   redirect("/");
 }
@@ -93,6 +98,7 @@ export async function importFilesAction(_prev: ImportResult | null, formData: Fo
   const files = formData.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
   if (!files.length) return { ok: false, error: "Pick at least one JSON file" };
   const fallback = sourceOf(formData.get("source"));
+  const user = await requireUser();
 
   const imported: NonNullable<ImportResult["imported"]> = [];
   let skipped = 0;
@@ -104,8 +110,8 @@ export async function importFilesAction(_prev: ImportResult | null, formData: Fo
           skipped++;
           continue;
         }
-        const convo = await createConversation({ title: c.title, source: c.source, createdAt: c.createdAt });
-        const msgs = await addMessages(convo.id, c.messages);
+        const convo = await createConversation(user.id, { title: c.title, source: c.source, createdAt: c.createdAt });
+        const msgs = await addMessages(user.id, convo.id, c.messages);
         imported.push({ id: convo.id, title: convo.title, messages: msgs.length });
       }
     }

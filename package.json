@@ -1,7 +1,7 @@
 {
   "name": "next-mem0",
   "version": "0.1.0",
-  "description": "Local AI conversation memory: store ChatGPT / Claude / CLI conversations on your own disk (LanceDB + Ollama) and search them by meaning.",
+  "description": "AI conversation memory: store ChatGPT / Claude / CLI conversations in your own Postgres (pgvector + Ollama embeddings) and search them by meaning.",
   "license": "MIT",
   "author": "Ala Garbaa (https://github.com/ala-garbaa-pro)",
   "homepage": "https://github.com/ala-garbaa-pro/mem0#readme",
@@ -18,12 +18,15 @@
     "chatgpt",
     "claude",
     "codex",
-    "lancedb",
     "ollama",
     "embeddings",
     "semantic-search",
     "local-first",
-    "nextjs"
+    "nextjs",
+    "postgres",
+    "pgvector",
+    "drizzle",
+    "better-auth"
   ],
   "bin": {
     "next-mem0": "bin/next-mem0.mjs"
@@ -38,7 +41,9 @@
     ".next/types/",
     "public/",
     "extension/",
-    "next.config.ts"
+    "next.config.ts",
+    "drizzle/",
+    "docker-compose.yml"
   ],
   "engines": {
     "node": ">=20.9"
@@ -49,17 +54,21 @@
     "start": "next start",
     "lint": "eslint",
     "test:e2e": "bun scripts/e2e.ts",
-    "prepublishOnly": "next build --webpack"
+    "prepublishOnly": "next build --webpack",
+    "db:generate": "drizzle-kit generate",
+    "db:seed": "bun scripts/seed.ts",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
-    "@lancedb/lancedb": "^0.39.0",
-    "apache-arrow": "18.1.0",
+    "better-auth": "^1.7.5",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.3.0",
+    "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.47.0",
     "next": "^16.3.5",
     "next-themes": "^0.4.6",
+    "postgres": "^3.4.9",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "shadcn": "^4.21.0",
@@ -72,6 +81,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",

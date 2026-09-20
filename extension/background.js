@@ -17,12 +17,14 @@ async function mem0Fetch(path, init) {
   const { mem0Url } = await getSettings();
   let res;
   try {
-    res = await fetch(mem0Url + path, init);
+    // The session cookie of the signed-in browser is what authenticates us.
+    res = await fetch(mem0Url + path, { credentials: "include", ...init });
   } catch {
-    throw new Error(`Cannot reach mem0 at ${mem0Url}. Is \`bun dev\` running?`);
+    throw new Error(`Cannot reach next-mem0 at ${mem0Url}. Is \`bun dev\` running?`);
   }
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || `mem0 answered ${res.status}`);
+  if (res.status === 401) throw new Error(`Not signed in — open ${mem0Url} in this browser and sign in first.`);
+  if (!res.ok) throw new Error(body.error || `next-mem0 answered ${res.status}`);
   return body;
 }
 

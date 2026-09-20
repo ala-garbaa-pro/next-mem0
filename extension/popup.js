@@ -44,7 +44,7 @@ function renderPrevious() {
   } else {
     prev.hidden = true;
     open.hidden = true;
-    $("import").textContent = "Import into mem0";
+    $("import").textContent = "Import into next-mem0";
   }
 }
 
@@ -76,7 +76,7 @@ $("import").addEventListener("click", async () => {
     const n = Array.isArray(extracted.conversation.messages)
       ? extracted.conversation.messages.length
       : Object.keys(extracted.conversation.mapping ?? {}).length;
-    showResult(`Saving to mem0 (${n} messages, embedding locally)…`, "");
+    showResult(`Saving to next-mem0 (${n} messages, embedding locally)…`, "");
     const res = await send({
       type: "IMPORT",
       key: detected.key,

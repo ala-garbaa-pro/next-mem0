@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { searchMessages } from "@/lib/db";
+import { requireUser } from "@/lib/session";
 import type { SearchHit } from "@/lib/types";
 import { SearchForm } from "@/components/search-form";
 import { SourceBadge } from "@/components/source-badge";
@@ -24,12 +25,13 @@ function groupHits(hits: SearchHit[]) {
 export default async function SearchPage(props: PageProps<"/search">) {
   const { q } = await props.searchParams;
   const query = (Array.isArray(q) ? q[0] : q ?? "").trim();
+  const user = await requireUser();
 
   let hits: SearchHit[] = [];
   let error: string | null = null;
   if (query) {
     try {
-      hits = await searchMessages(query, 30);
+      hits = await searchMessages(user.id, query, 30);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }

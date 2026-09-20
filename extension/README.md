@@ -8,6 +8,8 @@ No build step — plain Manifest V3 JavaScript.
 1. Open `chrome://extensions`, turn on **Developer mode**.
 2. **Load unpacked** → pick this `extension/` folder.
 3. Start mem0 (`npx next-mem0`, or `bun dev` from the repo). If it is not on `http://localhost:3000`, click the ⚙ in the popup and set the URL.
+4. Open mem0 in this browser and **sign in** — the extension reuses that session cookie, so a
+   signed-out browser gets "Not signed in" from the popup.
 
 ## Use
 
@@ -29,8 +31,9 @@ popup.js  ──executeScript──▶  content/<site>.js   (reads the conversat
   re-fences code blocks.
 - The POST happens in the service worker so it finishes even if you close the popup while mem0
   is embedding the messages.
-- `/api/import` deliberately sends no CORS headers: the extension has host permission for
-  localhost, so it can call it, but a random web page cannot write into your store.
+- `/api/import` requires the Better Auth session cookie (the fetch runs with `credentials: "include"`)
+  and deliberately sends no CORS headers: the extension has host permission for localhost, so it
+  can call it, but a random web page cannot write into your store.
 
 ## Adding a site (Claude, Gemini, …)
 

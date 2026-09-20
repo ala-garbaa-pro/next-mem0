@@ -1,0 +1,35 @@
+{
+  "users": [
+    {
+      "email": "admin@example.com",
+      "password": "change-me-12345",
+      "name": "Admin",
+      "conversations": [
+        {
+          "title": "Docker: container can't reach Postgres on the host",
+          "source": "claude",
+          "tags": ["docker", "postgres"],
+          "createdAt": "2026-09-01T10:00:00Z",
+          "messages": [
+            { "role": "user", "content": "My app container gets ECONNREFUSED connecting to localhost:5432, but psql works on the host." },
+            {
+              "role": "assistant",
+              "content": "Inside the container, localhost is the container itself. Use host.docker.internal:5432 (Docker Desktop) or put both services in the same compose network and connect by service name."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "email": "alice@example.com",
+      "password": "change-me-12345",
+      "name": "Alice",
+      "conversations": []
+    },
+    {
+      "email": "bob@example.com",
+      "password": "change-me-12345",
+      "name": "Bob"
+    }
+  ]
+}

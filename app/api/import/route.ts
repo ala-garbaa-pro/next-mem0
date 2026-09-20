@@ -1,25 +1,34 @@
 import { revalidatePath } from "next/cache";
-import { addMessages, createConversation, deleteConversation, getConversation, getStats } from "@/lib/db";
+import { addMessages, createConversation, deleteConversation, getStats } from "@/lib/db";
 import { parseExportData } from "@/lib/importers";
+import { getRequestUser } from "@/lib/session";
 import { isSource } from "@/lib/types";
 
 /**
  * JSON import endpoint used by the browser extension (extension/).
+ * Needs the Better Auth session cookie — the extension sends the cookies of the signed-in browser.
  * No CORS headers on purpose: the extension calls this from its service worker with host
- * permissions, so an arbitrary web page can never post into the local store.
+ * permissions, so an arbitrary web page can never post into the store.
  *
- * GET  → { ok, conversations, messages }  (connection check)
+ * GET  → { ok, conversations, messages, user }  (connection check; 401 when not signed in)
  * POST { conversation, source?, replaceId? }
  *   conversation: anything parseExportData() understands — a ChatGPT `mapping` object as returned
  *                 by chatgpt.com itself, a Claude.ai chat, or { title, source, messages: [...] }.
  *   replaceId:    id of a previously imported conversation to delete first (re-import).
  */
-export async function GET() {
-  const stats = await getStats();
-  return Response.json({ ok: true, conversations: stats.conversations, messages: stats.messages });
+const unauthorized = () =>
+  Response.json({ error: "Not signed in — open next-mem0 in this browser and sign in" }, { status: 401 });
+
+export async function GET(request: Request) {
+  const user = await getRequestUser(request);
+  if (!user) return unauthorized();
+  const stats = await getStats(user.id);
+  return Response.json({ ok: true, conversations: stats.conversations, messages: stats.messages, user: user.email });
 }
 
 export async function POST(request: Request) {
+  const user = await getRequestUser(request);
+  if (!user) return unauthorized();
   const body = (await request.json().catch(() => null)) as
     | { conversation?: unknown; source?: unknown; replaceId?: unknown }
     | null;
@@ -36,11 +45,11 @@ export async function POST(request: Request) {
   if (!c?.messages.length) return Response.json({ error: "No messages found in conversation" }, { status: 422 });
 
   if (typeof body.replaceId === "string" && body.replaceId) {
-    if (await getConversation(body.replaceId)) await deleteConversation(body.replaceId);
+    await deleteConversation(user.id, body.replaceId);
   }
 
-  const convo = await createConversation({ title: c.title, source: c.source, createdAt: c.createdAt });
-  const msgs = await addMessages(convo.id, c.messages);
+  const convo = await createConversation(user.id, { title: c.title, source: c.source, createdAt: c.createdAt });
+  const msgs = await addMessages(user.id, convo.id, c.messages);
   revalidatePath("/", "layout");
   return Response.json({
     ok: true,

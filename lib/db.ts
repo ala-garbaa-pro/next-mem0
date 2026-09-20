@@ -1,14 +1,14 @@
 /**
- * Local vector store for conversation history, backed by LanceDB (embedded, on disk).
- * Two tables:
- *   conversations — metadata (title, source, tags, cli session id, ...)
+ * Conversation store on PostgreSQL + pgvector, through Drizzle (schema in lib/schema.ts).
+ *   conversations — metadata (title, source, tags, cli session id, ...), owned by a user
  *   messages      — one row per message, with a nomic-embed-text vector for semantic search
+ *
+ * Every function takes the owning userId and only ever reads or writes that user's rows.
  */
-import fs from "node:fs/promises";
-import path from "node:path";
-import * as lancedb from "@lancedb/lancedb";
-import { Field, FixedSizeList, Float32, Int32, Schema, Utf8 } from "apache-arrow";
-import { EMBED_DIM, embedDocuments, embedQuery } from "./embeddings";
+import { and, asc, cosineDistance, desc, eq, inArray, sql } from "drizzle-orm";
+import { db, describeDatabase, ready } from "./drizzle";
+import { EMBED_DIM, EMBED_MODEL, embedDocuments, embedQuery } from "./embeddings";
+import { conversations, messages } from "./schema";
 import {
   isRole,
   isSource,
@@ -19,270 +19,414 @@ import {
   type Source,
 } from "./types";
 
-export const DB_PATH = process.env.MEM0_DB_PATH ?? path.join(process.cwd(), "data", "lancedb");
 /** Hits with cosine similarity below this are noise for nomic-embed-text; tune per model. */
 const MIN_SIMILARITY = Number(process.env.MEM0_MIN_SIMILARITY ?? 0.45);
 
-const conversationSchema = new Schema([
-  new Field("id", new Utf8(), false),
-  new Field("title", new Utf8(), false),
-  new Field("source", new Utf8(), false),
-  new Field("tags", new Utf8(), false), // JSON-encoded string[]
-  new Field("created_at", new Utf8(), false),
-  new Field("updated_at", new Utf8(), false),
-  new Field("cli_session_id", new Utf8(), false),
-  new Field("message_count", new Int32(), false),
-  new Field("preview", new Utf8(), false),
-]);
-
-const messageSchema = new Schema([
-  new Field("id", new Utf8(), false),
-  new Field("conversation_id", new Utf8(), false),
-  new Field("role", new Utf8(), false),
-  new Field("content", new Utf8(), false),
-  new Field("created_at", new Utf8(), false),
-  new Field("position", new Int32(), false),
-  new Field("vector", new FixedSizeList(EMBED_DIM, new Field("item", new Float32(), true)), false),
-]);
-
-const MESSAGE_COLUMNS = ["id", "conversation_id", "role", "content", "created_at", "position"];
-
-interface Store {
-  db: lancedb.Connection;
-  conversations: lancedb.Table;
-  messages: lancedb.Table;
-}
-
-// Survive HMR in dev: keep one connection on globalThis.
-const g = globalThis as unknown as { __mem0Store?: Promise<Store> };
-
-async function openStore(): Promise<Store> {
-  await fs.mkdir(DB_PATH, { recursive: true });
-  // readConsistencyInterval 0 = always see writes from other processes (scripts, an MCP server, ...).
-  const db = await lancedb.connect(DB_PATH, { readConsistencyInterval: 0 });
-  const names = await db.tableNames();
-  const conversations = names.includes("conversations")
-    ? await db.openTable("conversations")
-    : await db.createEmptyTable("conversations", conversationSchema);
-  const messages = names.includes("messages")
-    ? await db.openTable("messages")
-    : await db.createEmptyTable("messages", messageSchema);
-  return { db, conversations, messages };
-}
-
-export function getStore(): Promise<Store> {
-  g.__mem0Store ??= openStore().catch((err) => {
-    g.__mem0Store = undefined;
-    throw err;
-  });
-  return g.__mem0Store;
-}
-
-/** Quote a string for a LanceDB SQL predicate. */
-const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
-const now = () => new Date().toISOString();
+const now = () => new Date();
+const isUuid = (s: unknown): s is string =>
+  typeof s === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+const parseDate = (s: string | undefined, fallback: Date) => {
+  const d = s ? new Date(s) : fallback;
+  return Number.isNaN(d.getTime()) ? fallback : d;
+};
 
 // ---------- row mapping ----------
 
-type ConversationRow = {
-  id: string;
-  title: string;
-  source: string;
-  tags: string;
-  created_at: string;
-  updated_at: string;
-  cli_session_id: string;
-  message_count: number;
-  preview: string;
-};
-
-type MessageRow = {
-  id: string;
-  conversation_id: string;
-  role: string;
-  content: string;
-  created_at: string;
-  position: number;
-  _distance?: number;
-};
+type ConversationRow = typeof conversations.$inferSelect;
+type MessageRow = Omit<typeof messages.$inferSelect, "embedding">;
 
 function toConversation(r: ConversationRow): Conversation {
-  let tags: string[] = [];
-  try {
-    tags = JSON.parse(r.tags || "[]");
-  } catch {
-    /* ignore bad json */
-  }
   return {
     id: r.id,
     title: r.title,
     source: isSource(r.source) ? r.source : "other",
-    tags,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    cliSessionId: r.cli_session_id ?? "",
-    messageCount: Number(r.message_count ?? 0),
-    preview: r.preview ?? "",
+    tags: Array.isArray(r.tags) ? r.tags.filter((t): t is string => typeof t === "string") : [],
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+    cliSessionId: r.cliSessionId,
+    messageCount: r.messageCount,
+    preview: r.preview,
   };
 }
 
 function toMessage(r: MessageRow): Message {
   return {
     id: r.id,
-    conversationId: r.conversation_id,
+    conversationId: r.conversationId,
     role: isRole(r.role) ? r.role : "user",
     content: r.content,
-    createdAt: r.created_at,
-    position: Number(r.position),
+    createdAt: r.createdAt.toISOString(),
+    position: r.position,
   };
 }
+
+const MESSAGE_COLUMNS = {
+  id: messages.id,
+  conversationId: messages.conversationId,
+  userId: messages.userId,
+  role: messages.role,
+  content: messages.content,
+  createdAt: messages.createdAt,
+  position: messages.position,
+};
 
 // ---------- conversations ----------
 
-export async function listConversations(): Promise<Conversation[]> {
-  const { conversations } = await getStore();
-  const rows = (await conversations.query().limit(10_000).toArray()) as ConversationRow[];
-  return rows.map(toConversation).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+export async function listConversations(userId: string): Promise<Conversation[]> {
+  await ready();
+  const rows = await db
+    .select()
+    .from(conversations)
+    .where(eq(conversations.userId, userId))
+    .orderBy(desc(conversations.updatedAt))
+    .limit(10_000);
+  return rows.map(toConversation);
 }
 
-export async function getConversation(id: string): Promise<Conversation | null> {
-  const { conversations } = await getStore();
-  const rows = (await conversations
-    .query()
-    .where(`id = ${q(id)}`)
-    .limit(1)
-    .toArray()) as ConversationRow[];
-  return rows[0] ? toConversation(rows[0]) : null;
+export async function getConversation(userId: string, id: string): Promise<Conversation | null> {
+  if (!isUuid(id)) return null;
+  await ready();
+  const [row] = await db
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)))
+    .limit(1);
+  return row ? toConversation(row) : null;
 }
 
-async function getConversationsByIds(ids: string[]): Promise<Map<string, Conversation>> {
-  const map = new Map<string, Conversation>();
-  if (!ids.length) return map;
-  const { conversations } = await getStore();
-  const rows = (await conversations
-    .query()
-    .where(`id IN (${ids.map(q).join(", ")})`)
-    .limit(ids.length)
-    .toArray()) as ConversationRow[];
-  for (const r of rows) map.set(r.id, toConversation(r));
-  return map;
-}
-
-export async function createConversation(input: {
-  title?: string;
-  source: Source;
-  tags?: string[];
-  createdAt?: string;
-  cliSessionId?: string;
-}): Promise<Conversation> {
-  const { conversations } = await getStore();
-  const ts = input.createdAt ?? now();
-  const row: ConversationRow = {
-    id: crypto.randomUUID(),
-    title: input.title?.trim() || "Untitled conversation",
-    source: input.source,
-    tags: JSON.stringify(input.tags ?? []),
-    created_at: ts,
-    updated_at: ts,
-    cli_session_id: input.cliSessionId ?? "",
-    message_count: 0,
-    preview: "",
-  };
-  await conversations.add([row]);
+export async function createConversation(
+  userId: string,
+  input: {
+    id?: string;
+    title?: string;
+    source: Source;
+    tags?: string[];
+    createdAt?: string;
+    updatedAt?: string;
+    cliSessionId?: string;
+  },
+): Promise<Conversation> {
+  await ready();
+  const created = parseDate(input.createdAt, now());
+  const [row] = await db
+    .insert(conversations)
+    .values({
+      id: input.id ?? crypto.randomUUID(),
+      userId,
+      title: input.title?.trim() || "Untitled conversation",
+      source: input.source,
+      tags: input.tags ?? [],
+      createdAt: created,
+      updatedAt: parseDate(input.updatedAt, created),
+      cliSessionId: input.cliSessionId ?? "",
+    })
+    .returning();
   return toConversation(row);
 }
 
 export async function updateConversation(
+  userId: string,
   id: string,
   values: Partial<{ title: string; tags: string[]; cliSessionId: string; source: Source }>,
 ): Promise<void> {
-  const { conversations } = await getStore();
-  const patch: Record<string, string> = { updated_at: now() };
+  await ready();
+  const patch: Partial<typeof conversations.$inferInsert> = { updatedAt: now() };
   if (values.title !== undefined) patch.title = values.title.trim() || "Untitled conversation";
-  if (values.tags !== undefined) patch.tags = JSON.stringify(values.tags);
-  if (values.cliSessionId !== undefined) patch.cli_session_id = values.cliSessionId;
+  if (values.tags !== undefined) patch.tags = values.tags;
+  if (values.cliSessionId !== undefined) patch.cliSessionId = values.cliSessionId;
   if (values.source !== undefined) patch.source = values.source;
-  await conversations.update({ where: `id = ${q(id)}`, values: patch });
+  await db
+    .update(conversations)
+    .set(patch)
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
 }
 
-export async function deleteConversation(id: string): Promise<void> {
-  const { conversations, messages } = await getStore();
-  await messages.delete(`conversation_id = ${q(id)}`);
-  await conversations.delete(`id = ${q(id)}`);
+export async function deleteConversation(userId: string, id: string): Promise<void> {
+  if (!isUuid(id)) return;
+  await ready();
+  // messages cascade
+  await db.delete(conversations).where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
 }
 
 // ---------- messages ----------
 
-export async function getMessages(conversationId: string): Promise<Message[]> {
-  const { messages } = await getStore();
-  const rows = (await messages
-    .query()
-    .where(`conversation_id = ${q(conversationId)}`)
+export async function getMessages(userId: string, conversationId: string): Promise<Message[]> {
+  if (!isUuid(conversationId)) return [];
+  await ready();
+  const rows = await db
     .select(MESSAGE_COLUMNS)
-    .limit(100_000)
-    .toArray()) as MessageRow[];
-  return rows.map(toMessage).sort((a, b) => a.position - b.position);
+    .from(messages)
+    .where(and(eq(messages.conversationId, conversationId), eq(messages.userId, userId)))
+    .orderBy(asc(messages.position));
+  return rows.map(toMessage);
 }
 
 /** Append messages to a conversation: embeds them, stores them, refreshes conversation metadata. */
-export async function addMessages(conversationId: string, input: NewMessage[]): Promise<Message[]> {
+export async function addMessages(userId: string, conversationId: string, input: NewMessage[]): Promise<Message[]> {
   const items = input.filter((m) => m.content.trim().length > 0);
   if (!items.length) return [];
-  const { conversations, messages } = await getStore();
-  const convo = await getConversation(conversationId);
+  const convo = await getConversation(userId, conversationId);
   if (!convo) throw new Error("Conversation not found");
-
   const vectors = await embedDocuments(items.map((m) => `${m.role}: ${m.content}`));
+  return insertMessages(convo, items, vectors);
+}
+
+/** Store already-embedded messages under `convo` (its owner is trusted; used by addMessages and restore). */
+async function insertMessages(
+  convo: Conversation & { userId?: string },
+  items: (NewMessage & { id?: string; position?: number })[],
+  vectors: number[][],
+): Promise<Message[]> {
+  if (!items.length) return [];
+  await ready();
+  const [owner] = await db
+    .select({ userId: conversations.userId })
+    .from(conversations)
+    .where(eq(conversations.id, convo.id));
+  if (!owner) throw new Error("Conversation not found");
+
   const ts = now();
-  const rows = items.map((m, i) => ({
-    id: crypto.randomUUID(),
-    conversation_id: conversationId,
+  const rows: (typeof messages.$inferInsert)[] = items.map((m, i) => ({
+    id: m.id ?? crypto.randomUUID(),
+    conversationId: convo.id,
+    userId: owner.userId,
     role: m.role,
     content: m.content,
-    created_at: m.createdAt ?? ts,
-    position: convo.messageCount + i,
-    vector: vectors[i],
+    createdAt: parseDate(m.createdAt, ts),
+    position: m.position ?? convo.messageCount + i,
+    embedding: vectors[i],
   }));
-  await messages.add(rows);
 
   const firstUser = items.find((m) => m.role === "user") ?? items[0];
-  const patch: Record<string, string | number> = {
-    message_count: convo.messageCount + rows.length,
-    updated_at: ts,
+  const patch: Partial<typeof conversations.$inferInsert> = {
+    messageCount: convo.messageCount + rows.length,
+    updatedAt: ts,
   };
   if (!convo.preview) patch.preview = firstUser.content.trim().slice(0, 160);
   if (convo.title === "Untitled conversation") {
     patch.title = firstUser.content.trim().split("\n")[0].slice(0, 80);
   }
-  await conversations.update({ where: `id = ${q(conversationId)}`, values: patch });
 
-  return rows.map(toMessage);
+  await db.transaction(async (tx) => {
+    // Insert in chunks so a huge import does not build one enormous statement.
+    for (let i = 0; i < rows.length; i += 200) {
+      await tx.insert(messages).values(rows.slice(i, i + 200));
+    }
+    await tx.update(conversations).set(patch).where(eq(conversations.id, convo.id));
+  });
+
+  return rows.map((r) => toMessage({ ...r, createdAt: r.createdAt as Date }));
 }
 
 // ---------- search ----------
 
-export async function searchMessages(query: string, limit = 20): Promise<SearchHit[]> {
+export async function searchMessages(userId: string, query: string, limit = 20): Promise<SearchHit[]> {
   const text = query.trim();
   if (!text) return [];
-  const { messages } = await getStore();
+  await ready();
   const vector = await embedQuery(text);
-  const allRows = (await messages
-    .vectorSearch(vector)
-    .distanceType("cosine")
-    .select([...MESSAGE_COLUMNS, "_distance"])
-    .limit(limit)
-    .toArray()) as MessageRow[];
-  const rows = allRows.filter((r) => 1 - (r._distance ?? 0) >= MIN_SIMILARITY);
-  const convos = await getConversationsByIds([...new Set(rows.map((r) => r.conversation_id))]);
-  return rows.map((r) => ({
+  const distance = cosineDistance(messages.embedding, vector);
+  const rows = await db
+    .select({ ...MESSAGE_COLUMNS, distance: sql<number>`${distance}` })
+    .from(messages)
+    .where(eq(messages.userId, userId))
+    .orderBy(distance)
+    .limit(limit);
+  const hits = rows.filter((r) => 1 - Number(r.distance) >= MIN_SIMILARITY);
+  const ids = [...new Set(hits.map((r) => r.conversationId))];
+  const convoRows = ids.length ? await db.select().from(conversations).where(inArray(conversations.id, ids)) : [];
+  const convos = new Map(convoRows.map((r) => [r.id, toConversation(r)]));
+  return hits.map((r) => ({
     ...toMessage(r),
-    distance: r._distance ?? 0,
-    conversation: convos.get(r.conversation_id) ?? null,
+    distance: Number(r.distance),
+    conversation: convos.get(r.conversationId) ?? null,
   }));
 }
 
-export async function getStats(): Promise<{ conversations: number; messages: number; dbPath: string }> {
-  const { conversations, messages } = await getStore();
-  const [c, m] = await Promise.all([conversations.countRows(), messages.countRows()]);
-  return { conversations: c, messages: m, dbPath: DB_PATH };
+export async function getStats(userId: string): Promise<{ conversations: number; messages: number; database: string }> {
+  await ready();
+  const [[c], [m]] = await Promise.all([
+    db.select({ n: sql<number>`count(*)::int` }).from(conversations).where(eq(conversations.userId, userId)),
+    db.select({ n: sql<number>`count(*)::int` }).from(messages).where(eq(messages.userId, userId)),
+  ]);
+  return { conversations: c.n, messages: m.n, database: describeDatabase() };
+}
+
+// ---------- backup: export / import everything ----------
+
+export const BACKUP_FORMAT = "next-mem0-backup";
+
+export interface BackupHeader {
+  format: typeof BACKUP_FORMAT;
+  version: 1;
+  exportedAt: string;
+  embedModel: string;
+  embedDim: number;
+  conversations: number;
+  messages: number;
+}
+
+export interface BackupMessage {
+  id: string;
+  role: string;
+  content: string;
+  createdAt: string;
+  position: number;
+  /** Absent when exported with vectors=false; re-embedded on import. */
+  embedding?: number[];
+}
+
+export interface BackupConversation extends Omit<Conversation, "messageCount" | "preview"> {
+  messages: BackupMessage[];
+}
+
+export async function backupHeader(userId: string): Promise<BackupHeader> {
+  const s = await getStats(userId);
+  return {
+    format: BACKUP_FORMAT,
+    version: 1,
+    exportedAt: now().toISOString(),
+    embedModel: EMBED_MODEL,
+    embedDim: EMBED_DIM,
+    conversations: s.conversations,
+    messages: s.messages,
+  };
+}
+
+/** Yields the user's conversations with their messages, oldest first. Vectors are rounded to 6 decimals. */
+export async function* iterateBackup(userId: string, withVectors: boolean): AsyncGenerator<BackupConversation> {
+  await ready();
+  const convos = await db
+    .select()
+    .from(conversations)
+    .where(eq(conversations.userId, userId))
+    .orderBy(asc(conversations.createdAt), asc(conversations.id));
+  for (const c of convos) {
+    const rows = await db
+      .select({ ...MESSAGE_COLUMNS, ...(withVectors ? { embedding: messages.embedding } : {}) })
+      .from(messages)
+      .where(eq(messages.conversationId, c.id))
+      .orderBy(asc(messages.position));
+    const convo = toConversation(c);
+    yield {
+      id: convo.id,
+      title: convo.title,
+      source: convo.source,
+      tags: convo.tags,
+      createdAt: convo.createdAt,
+      updatedAt: convo.updatedAt,
+      cliSessionId: convo.cliSessionId,
+      messages: rows.map((r) => ({
+        id: r.id,
+        role: r.role,
+        content: r.content,
+        createdAt: r.createdAt.toISOString(),
+        position: r.position,
+        ...("embedding" in r && Array.isArray(r.embedding)
+          ? { embedding: (r.embedding as number[]).map((v) => Number(v.toFixed(6))) }
+          : {}),
+      })),
+    };
+  }
+}
+
+export interface RestoreResult {
+  conversations: number;
+  messages: number;
+  reembedded: number;
+  skipped: number;
+}
+
+/**
+ * Import a backup produced by iterateBackup() into the user's store. A conversation whose id already
+ * exists (for any user) is replaced only if it belongs to this user; otherwise it gets a new id.
+ * Messages without a stored vector, or from a different embedding model, are re-embedded.
+ */
+export async function restoreBackup(
+  userId: string,
+  header: Partial<BackupHeader>,
+  items: BackupConversation[],
+  opts: { replaceAll?: boolean } = {},
+): Promise<RestoreResult> {
+  if (header.format !== BACKUP_FORMAT) throw new Error("Not a next-mem0 backup file");
+  await ready();
+  const sameModel = header.embedModel === EMBED_MODEL && Number(header.embedDim) === EMBED_DIM;
+  if (opts.replaceAll) await db.delete(conversations).where(eq(conversations.userId, userId));
+
+  const result: RestoreResult = { conversations: 0, messages: 0, reembedded: 0, skipped: 0 };
+  for (const c of items) {
+    if (!isSource(c.source) || typeof c.title !== "string") {
+      result.skipped++;
+      continue;
+    }
+    const msgs = (Array.isArray(c.messages) ? c.messages : [])
+      .filter((m) => isRole(m.role) && typeof m.content === "string" && m.content.trim().length > 0)
+      .map((m, i) => ({
+        id: isUuid(m.id) ? m.id : crypto.randomUUID(),
+        role: m.role as NewMessage["role"],
+        content: m.content,
+        createdAt: m.createdAt,
+        position: Number.isInteger(m.position) ? m.position : i,
+        embedding: m.embedding,
+      }));
+
+    const vectors: number[][] = [];
+    const toEmbed: number[] = [];
+    msgs.forEach((m, i) => {
+      if (sameModel && Array.isArray(m.embedding) && m.embedding.length === EMBED_DIM) vectors[i] = m.embedding;
+      else toEmbed.push(i);
+    });
+    if (toEmbed.length) {
+      const fresh = await embedDocuments(toEmbed.map((i) => `${msgs[i].role}: ${msgs[i].content}`));
+      toEmbed.forEach((i, k) => (vectors[i] = fresh[k]));
+      result.reembedded += toEmbed.length;
+    }
+
+    // Reuse the exported id unless it collides with another user's conversation.
+    let id = isUuid(c.id) ? c.id : crypto.randomUUID();
+    const [existing] = await db
+      .select({ userId: conversations.userId })
+      .from(conversations)
+      .where(eq(conversations.id, id));
+    if (existing?.userId === userId) await deleteConversation(userId, id);
+    else if (existing) id = crypto.randomUUID();
+    // A message id from the file could also collide; drop ids that already exist.
+    if (msgs.length) {
+      const taken = new Set(
+        (
+          await db
+            .select({ id: messages.id })
+            .from(messages)
+            .where(
+              inArray(
+                messages.id,
+                msgs.map((m) => m.id),
+              ),
+            )
+        ).map((r) => r.id),
+      );
+      for (const m of msgs) if (taken.has(m.id)) m.id = crypto.randomUUID();
+    }
+
+    const convo = await createConversation(userId, {
+      id,
+      title: c.title,
+      source: c.source,
+      tags: Array.isArray(c.tags) ? c.tags.filter((t): t is string => typeof t === "string") : [],
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+      cliSessionId: typeof c.cliSessionId === "string" ? c.cliSessionId : "",
+    });
+    const inserted = await insertMessages(convo, msgs, vectors);
+    // insertMessages bumps updated_at; put the exported value back.
+    if (c.updatedAt) {
+      await db
+        .update(conversations)
+        .set({ updatedAt: parseDate(c.updatedAt, now()) })
+        .where(eq(conversations.id, id));
+    }
+    result.conversations++;
+    result.messages += inserted.length;
+  }
+  return result;
 }

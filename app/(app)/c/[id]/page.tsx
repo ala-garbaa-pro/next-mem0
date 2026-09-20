@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getConversation, getMessages } from "@/lib/db";
 import { isProvider } from "@/lib/providers";
+import { requireUser } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AddMessageForm } from "@/components/add-message-form";
@@ -11,9 +12,10 @@ import { SourceBadge } from "@/components/source-badge";
 
 export default async function ConversationPage(props: PageProps<"/c/[id]">) {
   const { id } = await props.params;
-  const conversation = await getConversation(id);
+  const user = await requireUser();
+  const conversation = await getConversation(user.id, id);
   if (!conversation) notFound();
-  const messages = await getMessages(id);
+  const messages = await getMessages(user.id, id);
 
   const defaultProvider = isProvider(conversation.source) ? conversation.source : "claude";
   const hasSession = Boolean(conversation.cliSessionId) && isProvider(conversation.source);

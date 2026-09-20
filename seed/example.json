@@ -1,0 +1,63 @@
+{
+  "user": { "email": "dev@example.com", "password": "password123", "name": "Dev" },
+  "conversations": [
+    {
+      "title": "Postgres connection pool exhausted under load",
+      "source": "claude",
+      "tags": ["postgres", "node"],
+      "createdAt": "2026-08-02T09:14:00Z",
+      "messages": [
+        {
+          "role": "user",
+          "content": "My Next.js app hits 'remaining connection slots are reserved' after a few minutes of traffic. I'm using postgres.js with max: 50 per instance and I run 6 instances."
+        },
+        {
+          "role": "assistant",
+          "content": "6 × 50 = 300 connections, but the default Postgres max_connections is 100. Either lower `max` to ~10 per instance or put PgBouncer in transaction mode in front of the database and keep the app-side pools small."
+        }
+      ]
+    },
+    {
+      "title": "CSS grid: sidebar that stops scrolling with the page",
+      "source": "chatgpt",
+      "tags": ["css"],
+      "createdAt": "2026-08-10T15:40:00Z",
+      "messages": [
+        { "role": "user", "content": "How do I make a fixed-width sidebar sticky next to a scrolling main column with CSS grid?" },
+        {
+          "role": "assistant",
+          "content": "Use `grid-template-columns: 288px 1fr` on the container, then `position: sticky; top: 0; height: 100vh; overflow: auto` on the sidebar. The main column scrolls normally and the sidebar stays put."
+        }
+      ]
+    },
+    {
+      "title": "Rust borrow checker: mutable borrow inside a loop",
+      "source": "codex",
+      "tags": ["rust"],
+      "createdAt": "2026-08-21T20:05:00Z",
+      "messages": [
+        {
+          "role": "user",
+          "content": "for item in &self.items { self.total += item.cost(); } fails with 'cannot borrow self.total as mutable because it is also borrowed as immutable'."
+        },
+        {
+          "role": "assistant",
+          "content": "Compute the sum first and assign once: `let sum: u32 = self.items.iter().map(|i| i.cost()).sum(); self.total += sum;`. That ends the shared borrow of `self.items` before the mutable borrow of `self.total`."
+        }
+      ]
+    },
+    {
+      "title": "Sourdough starter smells like acetone",
+      "source": "gemini",
+      "tags": ["baking"],
+      "createdAt": "2026-09-01T07:30:00Z",
+      "messages": [
+        { "role": "user", "content": "My starter smells like nail polish remover after two days in the fridge. Is it dead?" },
+        {
+          "role": "assistant",
+          "content": "No, it's just hungry. The acetone smell is the yeast producing ethanol and esters once the flour is used up. Discard most of it and feed 1:1:1 twice a day at room temperature; the smell goes back to sour-yeasty within a day or two."
+        }
+      ]
+    }
+  ]
+}

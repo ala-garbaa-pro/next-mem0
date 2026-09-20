@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRightIcon, MessageSquareIcon, PlusIcon, UploadIcon } from "lucide-react";
 import { getStats, listConversations } from "@/lib/db";
 import { ollamaStatus } from "@/lib/embeddings";
+import { requireUser } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { SearchForm } from "@/components/search-form";
@@ -46,10 +47,11 @@ function Stat({
 }
 
 export default async function Home() {
+  const user = await requireUser();
   const [stats, ollama, conversations] = await Promise.all([
-    getStats().catch(() => null),
+    getStats(user.id).catch(() => null),
     ollamaStatus(),
-    listConversations().catch(() => []),
+    listConversations(user.id).catch(() => []),
   ]);
   const recent = conversations.slice(0, 8);
 
@@ -64,8 +66,8 @@ export default async function Home() {
           Your AI memory, on your disk
         </h1>
         <p className="max-w-[700px] text-[15px] leading-6 text-muted-foreground text-pretty">
-          Every conversation is embedded with <Chip tone="a">{ollama.model}</Chip> and stored in LanceDB under{" "}
-          <Chip tone="b">./data/lancedb</Chip>. Search by meaning, not just keywords.
+          Every conversation is embedded with <Chip tone="a">{ollama.model}</Chip> and stored in Postgres + pgvector at{" "}
+          <Chip tone="b">{stats?.database ?? "postgres"}</Chip>. Search by meaning, not just keywords.
         </p>
         <div className="mt-2">
           <SearchForm autoFocus />

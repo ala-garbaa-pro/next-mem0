@@ -1,7 +1,10 @@
+import Image from "next/image";
 import Link from "next/link";
-import { BrainIcon, DatabaseIcon, PlusIcon, SearchIcon, UploadIcon } from "lucide-react";
+import { DatabaseIcon, PlusIcon, SearchIcon, UploadIcon } from "lucide-react";
+import type { SessionUser } from "@/lib/session";
 import type { Conversation } from "@/lib/types";
 import { ConversationNav } from "@/components/conversation-nav";
+import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const NAV = [
@@ -10,17 +13,30 @@ const NAV = [
   { href: "/search", label: "Search", Icon: SearchIcon, hover: "hover:border-vivid-a/40 hover:bg-vivid-a/15" },
 ] as const;
 
-export function AppSidebar({ conversations, dbError }: { conversations: Conversation[]; dbError: string | null }) {
+export function AppSidebar({
+  conversations,
+  dbError,
+  user,
+}: {
+  conversations: Conversation[];
+  dbError: string | null;
+  user: SessionUser;
+}) {
   return (
     <aside className="sticky top-0 flex h-svh w-72 shrink-0 flex-col overflow-hidden border-r border-sidebar-border text-sidebar-foreground backdrop-blur-lg [background:var(--sidebar-gradient)]">
       <div className="px-4 pt-[18px] pb-3">
         <div className="flex items-center gap-2.5">
-          <span className="vivid-gradient flex size-[34px] shrink-0 items-center justify-center rounded-[11px] shadow-[0_6px_18px_rgba(45,212,191,0.28)] [animation-duration:9s] [background-image:linear-gradient(135deg,var(--vivid-a),var(--vivid-b))]">
-            <BrainIcon className="size-[19px]" />
-          </span>
+          <Image
+            src="/logo/white-on-blue.png"
+            alt="next-mem0"
+            width={34}
+            height={34}
+            priority
+            className="size-[34px] shrink-0 rounded-[11px] shadow-[0_6px_18px_rgba(10,124,255,0.28)]"
+          />
           <div className="min-w-0 flex-1 leading-tight">
             <Link href="/" className="vivid-text-static font-heading text-base font-semibold tracking-tight">
-              mem0
+              next-mem0
             </Link>
             <p className="truncate text-xs text-muted-foreground">local AI memory</p>
           </div>
@@ -59,10 +75,22 @@ export function AppSidebar({ conversations, dbError }: { conversations: Conversa
         <ConversationNav conversations={conversations} />
       )}
 
-      <div className="mt-auto flex items-center gap-2 border-t border-sidebar-border px-4 py-3 text-xs text-muted-foreground">
-        <span className="glow-dot size-[7px] shrink-0 [animation-duration:2.6s]" />
-        <DatabaseIcon className="size-3.5" />
-        <span className="truncate font-mono">LanceDB · ./data/lancedb</span>
+      <div className="mt-auto flex flex-col gap-2 border-t border-sidebar-border px-4 py-3 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <span className="glow-dot size-[7px] shrink-0 [animation-duration:2.6s]" />
+          <span className="truncate" title={user.email}>
+            {user.email}
+          </span>
+          <SignOutButton />
+        </div>
+        <Link
+          href="/backup"
+          className="flex items-center gap-2 transition-colors hover:text-foreground"
+          title="Export / import all data"
+        >
+          <DatabaseIcon className="size-3.5" />
+          <span className="truncate font-mono">Postgres · pgvector · backup</span>
+        </Link>
       </div>
     </aside>
   );

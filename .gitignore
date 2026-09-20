@@ -49,3 +49,6 @@ next-env.d.ts
 /playwright-report
 /.tools
 /.shots
+
+# seed accounts (real credentials) — copy seed/users.json.example
+/seed/users.json
