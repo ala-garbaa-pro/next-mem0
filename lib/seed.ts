@@ -9,8 +9,8 @@
  *            "messages": [{ "role": "user", "content": "…" }, { "role": "assistant", "content": "…" }] }
  *        ]
  *      }
- * 2. A users file (seed/users.json) — several accounts, each with its own optional conversations:
- *      { "users": [ { "email", "password", "name", "conversations": [...] }, … ] }
+ * 2. A users file (seed/users.json) — accounts only, created when missing:
+ *      { "users": [ { "email": "…", "password": "…", "name": "…" }, … ] }
  * 3. A backup file from GET /api/backup (`format: "next-mem0-backup"`, `data: [...]`).
  *
  * The owning account is taken from opts.email, else the file's `user.email`; it is created when it
@@ -47,7 +47,7 @@ export interface SeedFile {
 }
 
 export interface UsersFile {
-  users: (SeedUser & { conversations?: SeedConversation[] })[];
+  users: SeedUser[];
 }
 
 export interface SeedOptions {
@@ -64,6 +64,8 @@ export interface SeedResult extends RestoreResult {
   email: string;
   createdUser: boolean;
 }
+
+const EMPTY: RestoreResult = { conversations: 0, messages: 0, reembedded: 0, skipped: 0 };
 
 type BackupFile = Partial<BackupHeader> & { data: BackupConversation[] };
 
@@ -145,9 +147,8 @@ export async function seed(json: unknown, opts: SeedOptions = {}): Promise<SeedR
     const results: SeedResult[] = [];
     for (const [i, u] of json.users.entries()) {
       if (typeof u?.email !== "string") throw new Error(`users[${i}]: email is required`);
-      const items = (u.conversations ?? []).map(toBackupConversation);
-      // opts.email would pin every user's data to one account; only the password/replace flags apply.
-      results.push(await seedUser(u, header, items, { ...opts, email: undefined }));
+      const { id, created } = await resolveSeedUser(u.email, { password: opts.password ?? u.password, name: u.name });
+      results.push({ ...EMPTY, userId: id, email: u.email.trim().toLowerCase(), createdUser: created });
     }
     return results;
   }

@@ -160,14 +160,14 @@ writes a new SQL migration into `drizzle/`; the app applies pending migrations o
 ### Seed data
 
 ```bash
-cp seed/users.json.example seed/users.json   # accounts + their conversations; git-ignored
+cp seed/users.json.example seed/users.json   # accounts (email / password / name); git-ignored
 bun run db:seed seed/users.json
 bun run db:seed seed/example.json            # one account, a few sample conversations
 bun run db:seed backup.json --user me@example.com --replace   # any /api/backup file
 ```
 
-`scripts/seed.ts` (`lib/seed.ts`) accepts a `{ "users": [...] }` file, a `{ "user", "conversations" }`
-file, or a backup export. Accounts that do not exist are created through Better Auth when a
+`scripts/seed.ts` (`lib/seed.ts`) accepts a `{ "users": [...] }` file (accounts only), a
+`{ "user", "conversations" }` file, or a backup export. Accounts that do not exist are created through Better Auth when a
 password is given; messages without vectors are embedded through Ollama. Conversations without an
 `id` get a fresh one on every run, so re-seeding the same file adds copies — use `--replace` to start
 that account from empty.

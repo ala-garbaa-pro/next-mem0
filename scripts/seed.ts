@@ -33,6 +33,10 @@ const { closeDb } = await import("../lib/drizzle");
 try {
   const results = await seedFromFile(file, { email: values.user, password: values.password, replace: values.replace });
   for (const r of results) {
+    if (r.conversations === 0 && r.messages === 0 && r.skipped === 0) {
+      console.log(`${r.email}: ${r.createdUser ? "account created" : "account already exists"}`);
+      continue;
+    }
     console.log(
       `Seeded ${r.conversations} conversation(s), ${r.messages} message(s) for ${r.email}` +
         (r.createdUser ? " (account created)" : "") +
