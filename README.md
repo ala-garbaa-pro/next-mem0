@@ -35,9 +35,10 @@ docker compose up -d      # from a checkout, or: docker run -d -p 5432:5432 -e P
 npx next-mem0             # or: bunx next-mem0
 ```
 
-Open <http://localhost:3000>, create your account, done. The database `next_mem0` and its tables are
-created on first start; nothing needs to be run by hand. Set `MEM0_DISABLE_SIGNUP=1` afterwards if
-nobody else should be able to register.
+Open <http://localhost:3000> and create your account — sign-up is off by default, so start with
+`NEXT_MEM0_ALLOW_SIGNUP=1` the first time (or create accounts with `bun run db:seed:users`, see below),
+then drop it again. The database `next_mem0` and its tables are created on first start; nothing
+needs to be run by hand.
 
 ```
 next-mem0 [-p <port>] [-H <hostname>]
@@ -93,27 +94,27 @@ If the [`claude`](https://docs.anthropic.com/en/docs/claude-code) or
 [`codex`](https://github.com/openai/codex) CLI is installed and logged in, the **New** page lets you
 talk to it from the app. next-mem0 runs one headless turn per message (`claude -p` / `codex exec`),
 streams the answer back, and stores the CLI's session id so the next turn resumes the same session.
-The CLIs run in `MEM0_CLI_CWD` (default `~/.next-mem0/cli-workspace`).
+The CLIs run in `NEXT_MEM0_CLI_CWD` (default `~/.next-mem0/cli-workspace`).
 
 ## Configuration
 
 All optional, set as environment variables.
 
-| Variable              | Default                                               | What it does                                                   |
-| --------------------- | ----------------------------------------------------- | -------------------------------------------------------------- |
-| `DATABASE_URL`        | `postgres://postgres:postgres@localhost:5432/next_mem0` | Postgres with pgvector; the database is created if missing    |
-| `BETTER_AUTH_SECRET`  | generated into `$MEM0_HOME/auth-secret`               | signs session cookies (required when not using the launcher)   |
-| `BETTER_AUTH_URL`     | derived from each request (loopback hosts only)       | pin the public origin, e.g. when served behind a proxy         |
-| `MEM0_ALLOWED_HOSTS`  | —                                                     | extra hosts to accept, comma-separated, e.g. `192.168.1.*:*`   |
-| `MEM0_DISABLE_SIGNUP` | —                                                     | `1` blocks new accounts                                        |
-| `MEM0_HOME`           | `~/.next-mem0`                                        | where the launcher keeps the auth secret and CLI workspace     |
-| `MEM0_CLI_CWD`        | `$MEM0_HOME/cli-workspace`                            | working directory the CLIs are spawned in                      |
-| `OLLAMA_URL`          | `http://localhost:11434`                              | Ollama server                                                  |
-| `OLLAMA_EMBED_MODEL`  | `nomic-embed-text`                                    | embedding model (see `EMBED_DIM`)                              |
-| `EMBED_DIM`           | `768`                                                 | vector size of the embedding model                             |
-| `MEM0_MIN_SIMILARITY` | `0.45`                                                | search hits below this cosine similarity are hidden            |
+| Variable                   | Default                                                 | What it does                                                   |
+| -------------------------- | ------------------------------------------------------- | -------------------------------------------------------------- |
+| `DATABASE_URL`             | `postgres://postgres:postgres@localhost:5432/next_mem0` | Postgres with pgvector; the database is created if missing     |
+| `BETTER_AUTH_SECRET`       | generated into `$NEXT_MEM0_HOME/auth-secret`            | signs session cookies (required when not using the launcher)   |
+| `BETTER_AUTH_URL`          | derived from each request (loopback hosts only)         | pin the public origin, e.g. when served behind a proxy         |
+| `NEXT_MEM0_ALLOWED_HOSTS`  | —                                                       | extra hosts to accept, comma-separated, e.g. `192.168.1.*:*`   |
+| `NEXT_MEM0_ALLOW_SIGNUP`   | —                                                       | `1` lets people create accounts on `/sign-up` (off by default) |
+| `NEXT_MEM0_HOME`           | `~/.next-mem0`                                          | where the launcher keeps the auth secret and CLI workspace     |
+| `NEXT_MEM0_CLI_CWD`        | `$NEXT_MEM0_HOME/cli-workspace`                         | working directory the CLIs are spawned in                      |
+| `OLLAMA_URL`               | `http://localhost:11434`                                | Ollama server                                                  |
+| `OLLAMA_EMBED_MODEL`       | `nomic-embed-text`                                      | embedding model (see `EMBED_DIM`)                              |
+| `EMBED_DIM`                | `768`                                                   | vector size of the embedding model                             |
+| `NEXT_MEM0_MIN_SIMILARITY` | `0.45`                                                  | search hits below this cosine similarity are hidden            |
 
-When running from source (`bun dev`), `MEM0_CLI_CWD` defaults to `./data/cli-workspace` inside the repo.
+When running from source (`bun dev`), `NEXT_MEM0_CLI_CWD` defaults to `./data/cli-workspace` inside the repo.
 
 The `messages.embedding` column is created as `vector(768)` by the first migration. To use a model
 with another size, set `EMBED_DIM` **before** the first start (or add a migration that alters the
@@ -149,7 +150,8 @@ docker compose up -d           # Postgres 18 + pgvector on localhost:5432
 bun dev
 ```
 
-`bun dev` uses Better Auth's development secret; set `BETTER_AUTH_SECRET` for anything you keep.
+`bun dev` reads `.env` (copy `.env.example`); `bun scripts/*.ts` reads it too. Set `BETTER_AUTH_SECRET`
+for anything you keep, and `NEXT_MEM0_ALLOW_SIGNUP=1` while you create your account.
 
 ### Schema changes
 

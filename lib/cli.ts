@@ -19,7 +19,7 @@ export type CliEvent =
   | { type: "error"; message: string };
 
 /** Working directory the CLIs run in; kept outside the repo so they don't pick up project files. */
-const CLI_CWD = process.env.MEM0_CLI_CWD ?? path.join(process.cwd(), "data", "cli-workspace");
+const CLI_CWD = process.env.NEXT_MEM0_CLI_CWD ?? path.join(process.cwd(), "data", "cli-workspace");
 
 function buildArgs(provider: Provider, resumeId: string): string[] {
   if (provider === "claude") {

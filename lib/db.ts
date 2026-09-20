@@ -20,7 +20,7 @@ import {
 } from "./types";
 
 /** Hits with cosine similarity below this are noise for nomic-embed-text; tune per model. */
-const MIN_SIMILARITY = Number(process.env.MEM0_MIN_SIMILARITY ?? 0.45);
+const MIN_SIMILARITY = Number(process.env.NEXT_MEM0_MIN_SIMILARITY ?? 0.45);
 
 const now = () => new Date();
 const isUuid = (s: unknown): s is string =>

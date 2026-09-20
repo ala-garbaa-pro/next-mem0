@@ -16,9 +16,9 @@ export const TEST_USER = { name: "Test User", email: "e2e@next-mem0.test", passw
 // Fresh directory per run, pinned through the environment so worker processes (which re-evaluate
 // this file) resolve the same one. (Playwright starts webServer before globalSetup, so the setup
 // only sweeps previous runs instead of wiping the directory the server is already using.)
-process.env.MEM0_E2E_RUN ??= String(process.pid);
+process.env.NEXT_MEM0_E2E_RUN ??= String(process.pid);
 export const TEST_DATA_ROOT = path.join(process.cwd(), ".test-data");
-export const TEST_DATA_DIR = path.join(TEST_DATA_ROOT, `run-${process.env.MEM0_E2E_RUN}`);
+export const TEST_DATA_DIR = path.join(TEST_DATA_ROOT, `run-${process.env.NEXT_MEM0_E2E_RUN}`);
 export const STORAGE_STATE = path.join(TEST_DATA_DIR, "auth.json");
 
 export default defineConfig({
@@ -51,7 +51,8 @@ export default defineConfig({
     env: {
       DATABASE_URL: TEST_DATABASE_URL,
       BETTER_AUTH_SECRET: "e2e-only-secret-not-for-production-0000000000",
-      MEM0_CLI_CWD: path.join(TEST_DATA_DIR, "cli-workspace"),
+      NEXT_MEM0_ALLOW_SIGNUP: "1",
+      NEXT_MEM0_CLI_CWD: path.join(TEST_DATA_DIR, "cli-workspace"),
     },
   },
 });

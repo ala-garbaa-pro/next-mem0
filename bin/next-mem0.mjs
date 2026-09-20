@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nextBin = createRequire(path.join(pkgDir, "package.json")).resolve("next/dist/bin/next");
 
-const homeDir = process.env.MEM0_HOME ?? path.join(os.homedir(), ".next-mem0");
+const homeDir = process.env.NEXT_MEM0_HOME ?? path.join(os.homedir(), ".next-mem0");
 const DEFAULT_DATABASE_URL = "postgres://postgres:postgres@localhost:5432/next_mem0";
 
 /** Better Auth needs a stable secret in production; generate one once and keep it next to the data. */
@@ -42,12 +42,12 @@ Requires:
   - Ollama running with the embedding model  (ollama pull nomic-embed-text)
 
 Environment:
-  DATABASE_URL         ${DEFAULT_DATABASE_URL}
-  BETTER_AUTH_SECRET   generated once into ${path.join(homeDir, "auth-secret")}
-  MEM0_HOME            ${homeDir}
-  MEM0_CLI_CWD         ${path.join(homeDir, "cli-workspace")}
-  MEM0_DISABLE_SIGNUP  set to 1 after creating your account to block new sign-ups
-  OLLAMA_URL, OLLAMA_EMBED_MODEL, EMBED_DIM, MEM0_MIN_SIMILARITY`);
+  DATABASE_URL            ${DEFAULT_DATABASE_URL}
+  BETTER_AUTH_SECRET      generated once into ${path.join(homeDir, "auth-secret")}
+  NEXT_MEM0_HOME          ${homeDir}
+  NEXT_MEM0_CLI_CWD       ${path.join(homeDir, "cli-workspace")}
+  NEXT_MEM0_ALLOW_SIGNUP  1 lets people create accounts on /sign-up (off by default)
+  OLLAMA_URL, OLLAMA_EMBED_MODEL, EMBED_DIM, NEXT_MEM0_MIN_SIMILARITY`);
   process.exit(0);
 }
 
@@ -55,7 +55,7 @@ const env = {
   ...process.env,
   DATABASE_URL: process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL,
   BETTER_AUTH_SECRET: authSecret(),
-  MEM0_CLI_CWD: process.env.MEM0_CLI_CWD ?? path.join(homeDir, "cli-workspace"),
+  NEXT_MEM0_CLI_CWD: process.env.NEXT_MEM0_CLI_CWD ?? path.join(homeDir, "cli-workspace"),
 };
 
 const child = spawn(process.execPath, [nextBin, "start", ...args], { cwd: pkgDir, env, stdio: "inherit" });

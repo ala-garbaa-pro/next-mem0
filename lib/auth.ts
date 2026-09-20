@@ -11,10 +11,10 @@ import * as schema from "./schema";
 
 /**
  * The app runs on whatever port / hostname `next-mem0 -p -H` was given, so unless BETTER_AUTH_URL
- * pins one origin, derive it per request and accept any loopback host (plus MEM0_ALLOWED_HOSTS,
+ * pins one origin, derive it per request and accept any loopback host (plus NEXT_MEM0_ALLOWED_HOSTS,
  * comma-separated, e.g. "192.168.1.*:*,mem0.lan:3000" when serving the LAN).
  */
-const extraHosts = (process.env.MEM0_ALLOWED_HOSTS ?? "")
+const extraHosts = (process.env.NEXT_MEM0_ALLOWED_HOSTS ?? "")
   .split(",")
   .map((h) => h.trim())
   .filter(Boolean);
@@ -23,6 +23,9 @@ const baseURL = process.env.BETTER_AUTH_URL ?? {
   // Direct auth.api calls with no request (scripts/seed.ts) have no host to derive from.
   fallback: `http://localhost:${process.env.PORT ?? 3000}`,
 };
+
+/** Sign-up is off unless NEXT_MEM0_ALLOW_SIGNUP=1 — create accounts with `bun run db:seed:users` instead. */
+export const ALLOW_SIGNUP = process.env.NEXT_MEM0_ALLOW_SIGNUP === "1";
 
 export const auth = betterAuth({
   baseURL,
@@ -34,7 +37,7 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
-    disableSignUp: process.env.MEM0_DISABLE_SIGNUP === "1",
+    disableSignUp: !ALLOW_SIGNUP,
   },
   session: {
     cookieCache: { enabled: true, maxAge: 5 * 60 },

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
+export function AuthForm({ mode, allowSignUp = true }: { mode: "sign-in" | "sign-up"; allowSignUp?: boolean }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -89,13 +89,15 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
               Sign in
             </Link>
           </>
-        ) : (
+        ) : allowSignUp ? (
           <>
             First time here?{" "}
             <Link href="/sign-up" className="font-semibold text-vivid-a hover:underline">
               Create an account
             </Link>
           </>
+        ) : (
+          <>Sign-up is off. Ask the person running this next-mem0 for an account.</>
         )}
       </p>
     </div>
