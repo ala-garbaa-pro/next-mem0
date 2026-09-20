@@ -96,6 +96,29 @@ talk to it from the app. next-mem0 runs one headless turn per message (`claude -
 streams the answer back, and stores the CLI's session id so the next turn resumes the same session.
 The CLIs run in `NEXT_MEM0_CLI_CWD` (default `~/.next-mem0/cli-workspace`).
 
+### Import Codex sessions from the terminal
+
+Chats you had with `codex` in a terminal live in `~/.codex/sessions` on **your** machine, which the
+server cannot see — so a small program runs there and uploads them. It is one dependency-free file
+that needs only Node 20+: the **Import** page has the download button (or fetch
+`/next-mem0-sync.mjs` from any next-mem0), then:
+
+```bash
+node next-mem0-sync.mjs login https://your-next-mem0.example   # once; the session is kept in ~/.next-mem0/sync.json
+node next-mem0-sync.mjs codex                                   # list all chats (terminal + Codex app; ✓ = imported), pick, import
+node next-mem0-sync.mjs codex --latest                          # the most recent thread
+node next-mem0-sync.mjs codex --all                             # everything not imported yet
+node next-mem0-sync.mjs codex 01a08b89 --replace                # by thread id (unique prefix), refresh the saved copy
+node next-mem0-sync.mjs codex --include-exec                    # also headless `codex exec` runs (scripts, next-mem0's chat panel)
+node next-mem0-sync.mjs status | logout
+```
+
+Only your messages and Codex's answers are uploaded (`POST /api/import/codex`): reasoning and tool
+calls never leave the machine, and Codex's own prompt scaffolding (environment context, plugin
+lists, AGENTS.md, image tags) is stripped server-side in `lib/codex-rollout.ts`. The Codex thread
+id is kept as the conversation's CLI session, so continuing an imported chat on its page resumes
+that same thread. `CODEX_HOME` overrides `~/.codex`.
+
 ## Configuration
 
 All optional, set as environment variables.
@@ -129,6 +152,9 @@ with `{ email, password }` and keep the cookie).
   single `mapping`), a Claude.ai export, or the generic `[{ title, messages: [{ role, content }] }]`
   shape. Optional `source` (`chatgpt` | `claude` | `codex` | `other`) and `replaceId`.
   `GET /api/import` returns `{ ok, conversations, messages, user }` as a health check.
+- `POST /api/import/codex` — what `next-mem0-sync.mjs` uses: `{ session: { id, name?, cwd?,
+  startedAt?, updatedAt? }, rows: [...JSONL lines of the rollout], replace? }`. Skips a thread the
+  account already holds unless `replace`. `GET /api/import/codex` lists the imported thread ids.
 - `GET /api/backup`, `POST /api/backup` — see [Backup](#backup-export--import-all-data).
 - `POST /api/chat` — streams a CLI turn (used by the chat panel).
 - `/api/auth/*` — Better Auth endpoints.

@@ -1,6 +1,17 @@
+import { headers } from "next/headers";
+import { CodexSyncCard } from "@/components/codex-sync-card";
 import { ImportForm } from "@/components/import-form";
 
-export default function ImportPage() {
+/** The URL the sync program should log in to — this deployment, as the browser reached it. */
+async function requestOrigin(): Promise<string> {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
+export default async function ImportPage() {
+  const origin = await requestOrigin();
   return (
     <div className="animate-rise mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
       <div>
@@ -11,6 +22,10 @@ export default function ImportPage() {
         </p>
       </div>
       <ImportForm />
+
+      <div className="hairline-x" />
+
+      <CodexSyncCard origin={origin} />
     </div>
   );
 }

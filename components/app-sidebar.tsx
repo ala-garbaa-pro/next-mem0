@@ -1,11 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
-import { DatabaseIcon, PlusIcon, SearchIcon, UploadIcon } from "lucide-react";
+import { PlusIcon, SearchIcon, UploadIcon } from "lucide-react";
 import type { SessionUser } from "@/lib/session";
 import type { Conversation } from "@/lib/types";
 import { ConversationNav } from "@/components/conversation-nav";
-import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { UserMenu } from "@/components/user-menu";
 
 const NAV = [
   { href: "/new", label: "New", Icon: PlusIcon, hover: "hover:border-vivid-a/40 hover:bg-vivid-a/15" },
@@ -75,22 +75,8 @@ export function AppSidebar({
         <ConversationNav conversations={conversations} />
       )}
 
-      <div className="mt-auto flex flex-col gap-2 border-t border-sidebar-border px-4 py-3 text-xs text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <span className="glow-dot size-[7px] shrink-0 [animation-duration:2.6s]" />
-          <span className="truncate" title={user.email}>
-            {user.email}
-          </span>
-          <SignOutButton />
-        </div>
-        <Link
-          href="/backup"
-          className="flex items-center gap-2 transition-colors hover:text-foreground"
-          title="Export / import all data"
-        >
-          <DatabaseIcon className="size-3.5" />
-          <span className="truncate font-mono">Postgres · pgvector · backup</span>
-        </Link>
+      <div className="mt-auto border-t border-sidebar-border px-3 py-3">
+        <UserMenu user={user} />
       </div>
     </aside>
   );

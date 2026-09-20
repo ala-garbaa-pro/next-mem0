@@ -94,6 +94,18 @@ export async function getConversation(userId: string, id: string): Promise<Conve
   return row ? toConversation(row) : null;
 }
 
+/** The conversation that already tracks a CLI session (a Codex thread id), if it was imported before. */
+export async function findConversationByCliSession(userId: string, cliSessionId: string): Promise<Conversation | null> {
+  if (!cliSessionId) return null;
+  await ready();
+  const [row] = await db
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.userId, userId), eq(conversations.cliSessionId, cliSessionId)))
+    .limit(1);
+  return row ? toConversation(row) : null;
+}
+
 export async function createConversation(
   userId: string,
   input: {

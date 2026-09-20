@@ -19,6 +19,6 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Pages only: API routes answer 401 themselves, static assets are skipped.
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:png|svg|ico|webmanifest)$).*)"],
+  // Pages only: API routes answer 401 themselves; static assets and the downloadable sync program are skipped.
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:png|svg|ico|webmanifest|mjs)$).*)"],
 };
