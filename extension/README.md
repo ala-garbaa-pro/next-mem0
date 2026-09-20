@@ -7,7 +7,7 @@ No build step — plain Manifest V3 JavaScript.
 
 1. Open `chrome://extensions`, turn on **Developer mode**.
 2. **Load unpacked** → pick this `extension/` folder.
-3. Start mem0 (`bun dev`). If it is not on `http://localhost:3000`, click the ⚙ in the popup and set the URL.
+3. Start mem0 (`npx next-mem0`, or `bun dev` from the repo). If it is not on `http://localhost:3000`, click the ⚙ in the popup and set the URL.
 
 ## Use
 

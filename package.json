@@ -1,13 +1,55 @@
 {
   "name": "next-mem0",
   "version": "0.1.0",
-  "private": true,
+  "description": "Local AI conversation memory: store ChatGPT / Claude / CLI conversations on your own disk (LanceDB + Ollama) and search them by meaning.",
+  "license": "MIT",
+  "author": "Ala Garbaa (https://github.com/ala-garbaa-pro)",
+  "homepage": "https://github.com/ala-garbaa-pro/mem0#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ala-garbaa-pro/mem0.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ala-garbaa-pro/mem0/issues"
+  },
+  "keywords": [
+    "memory",
+    "ai",
+    "chatgpt",
+    "claude",
+    "codex",
+    "lancedb",
+    "ollama",
+    "embeddings",
+    "semantic-search",
+    "local-first",
+    "nextjs"
+  ],
+  "bin": {
+    "next-mem0": "bin/next-mem0.mjs"
+  },
+  "files": [
+    "bin/",
+    ".next/*.json",
+    ".next/BUILD_ID",
+    ".next/build/",
+    ".next/server/",
+    ".next/static/",
+    ".next/types/",
+    "public/",
+    "extension/",
+    "next.config.ts"
+  ],
+  "engines": {
+    "node": ">=20.9"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:e2e": "bun scripts/e2e.ts"
+    "test:e2e": "bun scripts/e2e.ts",
+    "prepublishOnly": "next build --webpack"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

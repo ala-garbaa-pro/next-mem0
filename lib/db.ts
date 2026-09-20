@@ -5,9 +5,8 @@
  *   messages      — one row per message, with a nomic-embed-text vector for semantic search
  */
 import fs from "node:fs/promises";
-import { createRequire } from "node:module";
 import path from "node:path";
-import type * as LanceDB from "@lancedb/lancedb";
+import * as lancedb from "@lancedb/lancedb";
 import { Field, FixedSizeList, Float32, Int32, Schema, Utf8 } from "apache-arrow";
 import { EMBED_DIM, embedDocuments, embedQuery } from "./embeddings";
 import {
@@ -19,10 +18,6 @@ import {
   type SearchHit,
   type Source,
 } from "./types";
-
-// LanceDB is a native N-API module. Loading it through the project's own require() keeps the
-// bundler (Turbopack) out of the picture entirely; the runtime resolves it from node_modules.
-const lancedb: typeof LanceDB = createRequire(path.join(process.cwd(), "package.json"))("@lancedb/lancedb");
 
 export const DB_PATH = process.env.MEM0_DB_PATH ?? path.join(process.cwd(), "data", "lancedb");
 /** Hits with cosine similarity below this are noise for nomic-embed-text; tune per model. */
@@ -53,9 +48,9 @@ const messageSchema = new Schema([
 const MESSAGE_COLUMNS = ["id", "conversation_id", "role", "content", "created_at", "position"];
 
 interface Store {
-  db: LanceDB.Connection;
-  conversations: LanceDB.Table;
-  messages: LanceDB.Table;
+  db: lancedb.Connection;
+  conversations: lancedb.Table;
+  messages: lancedb.Table;
 }
 
 // Survive HMR in dev: keep one connection on globalThis.
