@@ -7,7 +7,27 @@ let tab = null;
 let detected = null; // { site, key }
 let previous = null; // record from chrome.storage.local.imports[key]
 
+// ---------- theme (dark by default, same as the app; `.dark` on <html>) ----------
+
+function applyTheme(theme) {
+  document.documentElement.classList.toggle("dark", theme === "dark");
+}
+
+async function initTheme() {
+  const { theme } = await chrome.storage.sync.get({ theme: "dark" });
+  applyTheme(theme);
+  // The popup opens with `no-transition` so the stored theme lands without a flash.
+  requestAnimationFrame(() => document.documentElement.classList.remove("no-transition"));
+}
+
+$("toggle-theme").addEventListener("click", async () => {
+  const theme = document.documentElement.classList.contains("dark") ? "light" : "dark";
+  applyTheme(theme);
+  await chrome.storage.sync.set({ theme });
+});
+
 async function init() {
+  await initTheme();
   [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   detected = detectSite(tab?.url);
 
@@ -27,6 +47,7 @@ async function init() {
   $("status").hidden = true;
   $("card").hidden = false;
   $("site-badge").textContent = detected.site.label;
+  $("site-badge").dataset.source = detected.site.source;
   $("page-title").textContent = tab.title?.replace(/\s*[|·-]\s*ChatGPT\s*$/i, "") || "Conversation";
   renderPrevious();
 }
@@ -40,11 +61,11 @@ function renderPrevious() {
     prev.hidden = false;
     open.href = previous.url;
     open.hidden = false;
-    $("import").textContent = "Re-import (replace)";
+    $("import-label").textContent = "Re-import (replace)";
   } else {
     prev.hidden = true;
     open.hidden = true;
-    $("import").textContent = "Import into next-mem0";
+    $("import-label").textContent = "Import into next-mem0";
   }
 }
 

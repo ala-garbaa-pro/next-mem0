@@ -1,15 +1,34 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark no-transition">
   <head>
     <meta charset="utf-8" />
     <title>next-mem0</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
+    <div class="shell">
+    <div class="aurora aurora-a"></div>
+    <div class="aurora aurora-b"></div>
+
     <header>
-      <span class="logo">next-mem0</span>
-      <button id="toggle-settings" class="ghost" title="Settings" aria-label="Settings">⚙</button>
+      <span class="logo">
+        <img src="icons/icon48.png" alt="" width="30" height="30" />
+        <span>
+          <span class="name">next-mem0</span>
+          <span class="tag">local AI memory</span>
+        </span>
+      </span>
+      <div class="header-actions">
+        <button id="toggle-theme" class="ghost" title="Toggle theme" aria-label="Toggle theme">
+          <svg class="sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+          <svg class="moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        </button>
+        <button id="toggle-settings" class="ghost" title="Settings" aria-label="Settings">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
     </header>
+    <div class="hairline"></div>
 
     <main id="main">
       <p id="status" class="status">Looking at this tab…</p>
@@ -20,8 +39,14 @@
         </div>
         <p id="prev" class="muted" hidden></p>
         <div class="actions">
-          <button id="import" class="primary">Import into next-mem0</button>
-          <a id="open" class="button" target="_blank" rel="noopener" hidden>Open in next-mem0</a>
+          <button id="import" class="primary">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M8 21h8"/><path d="M4 17h16"/></svg>
+            <span id="import-label">Import into next-mem0</span>
+          </button>
+          <a id="open" class="button" target="_blank" rel="noopener" hidden>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+            Open in next-mem0
+          </a>
         </div>
         <p id="result" class="result" hidden></p>
       </div>
@@ -29,13 +54,14 @@
     </main>
 
     <section id="settings" hidden>
-      <label for="mem0-url">mem0 server</label>
+      <label for="mem0-url">next-mem0 server</label>
       <div class="row">
         <input id="mem0-url" type="url" placeholder="http://localhost:3000" spellcheck="false" />
         <button id="save">Save</button>
       </div>
       <p id="settings-result" class="muted"></p>
     </section>
+    </div>
 
     <script type="module" src="popup.js"></script>
   </body>

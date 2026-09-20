@@ -7,15 +7,18 @@ No build step — plain Manifest V3 JavaScript.
 
 1. Open `chrome://extensions`, turn on **Developer mode**.
 2. **Load unpacked** → pick this `extension/` folder.
-3. Start mem0 (`npx next-mem0`, or `bun dev` from the repo). If it is not on `http://localhost:3000`, click the ⚙ in the popup and set the URL.
-4. Open mem0 in this browser and **sign in** — the extension reuses that session cookie, so a
+3. Start next-mem0 (`npx next-mem0`, or `bun dev` from the repo). If it is not on `http://localhost:3000`, click the gear in the popup and set the URL.
+4. Open next-mem0 in this browser and **sign in** — the extension reuses that session cookie, so a
    signed-out browser gets "Not signed in" from the popup.
 
 ## Use
 
-Open a conversation (e.g. `https://chatgpt.com/c/<id>`), click the mem0 icon, **Import into mem0**.
-The popup remembers what it imported: it shows **Open in mem0** and turns the button into
+Open a conversation (e.g. `https://chatgpt.com/c/<id>`), click the next-mem0 icon, **Import into next-mem0**.
+The popup remembers what it imported: it shows **Open in next-mem0** and turns the button into
 **Re-import (replace)**, which deletes the old copy and saves the current state of the chat.
+
+The popup uses the same look as the app (dark by default); the sun/moon button in the header
+switches between dark and light, and the choice is synced with your Chrome profile.
 
 ## How it works
 
