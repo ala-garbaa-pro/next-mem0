@@ -57,6 +57,7 @@
     "prepublishOnly": "next build --webpack",
     "db:generate": "drizzle-kit generate",
     "db:seed": "bun scripts/seed.ts",
+    "db:seed:users": "bun scripts/seed.ts seed/users.json",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

@@ -161,7 +161,7 @@ writes a new SQL migration into `drizzle/`; the app applies pending migrations o
 
 ```bash
 cp seed/users.json.example seed/users.json   # accounts (email / password / name); git-ignored
-bun run db:seed seed/users.json
+bun run db:seed:users                        # = bun run db:seed seed/users.json
 bun run db:seed seed/example.json            # one account, a few sample conversations
 bun run db:seed backup.json --user me@example.com --replace   # any /api/backup file
 ```
