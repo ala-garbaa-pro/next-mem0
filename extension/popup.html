@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>mem0</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <span class="logo">mem0</span>
+      <button id="toggle-settings" class="ghost" title="Settings" aria-label="Settings">⚙</button>
+    </header>
+
+    <main id="main">
+      <p id="status" class="status">Looking at this tab…</p>
+      <div id="card" class="card" hidden>
+        <div class="row">
+          <span id="site-badge" class="badge"></span>
+          <span id="page-title" class="title"></span>
+        </div>
+        <p id="prev" class="muted" hidden></p>
+        <div class="actions">
+          <button id="import" class="primary">Import into mem0</button>
+          <a id="open" class="button" target="_blank" rel="noopener" hidden>Open in mem0</a>
+        </div>
+        <p id="result" class="result" hidden></p>
+      </div>
+      <p id="hint" class="muted" hidden></p>
+    </main>
+
+    <section id="settings" hidden>
+      <label for="mem0-url">mem0 server</label>
+      <div class="row">
+        <input id="mem0-url" type="url" placeholder="http://localhost:3000" spellcheck="false" />
+        <button id="save">Save</button>
+      </div>
+      <p id="settings-result" class="muted"></p>
+    </section>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

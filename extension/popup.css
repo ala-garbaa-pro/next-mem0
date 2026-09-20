@@ -1,0 +1,98 @@
+:root {
+  color-scheme: light dark;
+  --bg: #fdfcfa;
+  --fg: #1c1b19;
+  --muted: #6f6a62;
+  --line: #e6e2da;
+  --card: #ffffff;
+  --accent: #c2410c;
+  --accent-fg: #ffffff;
+  --ok: #15803d;
+  --err: #b91c1c;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171614;
+    --fg: #f1ede6;
+    --muted: #a39d93;
+    --line: #2d2a26;
+    --card: #1f1d1a;
+    --accent: #f97316;
+    --accent-fg: #1a0d05;
+    --ok: #4ade80;
+    --err: #f87171;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  width: 340px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.logo { font-weight: 700; letter-spacing: -0.02em; font-size: 15px; }
+main, section { padding: 12px 14px; }
+section { border-top: 1px solid var(--line); }
+.status, .muted { color: var(--muted); margin: 0 0 8px; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+}
+.row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.badge {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.actions { display: flex; gap: 8px; margin-top: 10px; }
+button, .button {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--fg);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+button:disabled { opacity: 0.6; cursor: default; }
+.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+.ghost { border: none; background: transparent; padding: 2px 6px; font-size: 16px; color: var(--muted); }
+.result { margin: 10px 0 0; }
+.result.ok { color: var(--ok); }
+.result.err { color: var(--err); }
+label { display: block; font-weight: 600; margin-bottom: 6px; }
+input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--fg);
+}

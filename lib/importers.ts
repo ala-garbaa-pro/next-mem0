@@ -141,7 +141,11 @@ export function parseExport(jsonText: string, fallbackSource: Source = "other"):
   } catch {
     throw new Error("File is not valid JSON");
   }
+  return parseExportData(data, fallbackSource);
+}
 
+/** Same as parseExport but for already-parsed JSON (e.g. a request body). */
+export function parseExportData(data: unknown, fallbackSource: Source = "other"): ImportedConversation[] {
   // Bare message array
   if (Array.isArray(data) && data.length && obj(data[0]) && "role" in data[0] && !("mapping" in data[0])) {
     const messages = parseGenericMessages(data);

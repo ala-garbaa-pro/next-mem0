@@ -8,6 +8,7 @@ Store every AI conversation you have on your own disk and search it by meaning.
   - paste a transcript (`User:` / `Assistant:` lines are split into messages) or add messages one by one
   - import a ChatGPT or Claude.ai data export (`conversations.json`), or generic `[{ title, messages: [{ role, content }] }]`
   - chat with the locally installed **`claude`** or **`codex`** CLI from inside the app; every turn is saved and the CLI session is resumed on the next message
+  - click the **browser extension** on an open ChatGPT conversation to save it (see [`extension/README.md`](extension/README.md); Claude and Gemini next)
 
 ## Run
 
@@ -58,6 +59,8 @@ Visual check of every page in light and dark mode (needs a running dev server):
 lib/db.ts          LanceDB store: conversations + messages tables, semantic search
 lib/embeddings.ts  Ollama /api/embed client
 lib/importers.ts   ChatGPT / Claude export parsers, transcript splitter
+app/api/import/    JSON import endpoint used by the browser extension
+extension/         Chrome (MV3) extension: import the conversation in the current tab
 lib/cli.ts         spawns `claude -p` / `codex exec`, streams JSONL events, tracks session ids
 app/actions.ts     server actions (create / add message / rename / delete / import)
 app/api/chat       streaming route the chat panel talks to
