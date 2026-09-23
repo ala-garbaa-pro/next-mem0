@@ -7,7 +7,7 @@
  *
  *   node next-mem0-sync.mjs login https://your-next-mem0.example    # once; stores the session
  *   node next-mem0-sync.mjs codex                                    # list threads, pick, import
- *   node next-mem0-sync.mjs claude                                   # same, for Claude Code
+ *   node next-mem0-sync.mjs claude                                   # pick account, then sessions
  *   node next-mem0-sync.mjs codex --latest | --all | <session-id>…   # without the picker
  *   node next-mem0-sync.mjs status | logout
  *
@@ -322,6 +322,23 @@ const isClaudeMessageRow = (row) =>
   obj(row.message);
 
 /**
+ * Which account a home is signed in as, so the picker can name it. Read from the home's own
+ * .claude.json and only ever printed here — the server is sent conversations, never this.
+ * .credentials.json sits next to it and holds the tokens; it is deliberately never opened.
+ */
+async function claudeAccount(dir) {
+  const file = path.join(dir, ".claude.json");
+  try {
+    // This file also accumulates per-project history and can get big; it is not worth a stall.
+    if ((await fs.stat(file)).size > 25_000_000) return "";
+    const j = JSON.parse(await fs.readFile(file, "utf8"));
+    return obj(j) && obj(j.oauthAccount) ? str(j.oauthAccount.emailAddress) : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Every Claude Code home on this machine. One person often has several: `claude` keeps its data in
  * ~/.claude by default, but a profile started with CLAUDE_CONFIG_DIR gets its own directory, and
  * those conventionally sit side by side under ~/.config (claude-pro-ala, claude-pro-mouna, …).
@@ -336,7 +353,7 @@ async function claudeHomes() {
     try {
       // A home worth reading is one that has sessions in it.
       await fs.stat(path.join(dir, "projects"));
-      if (!homes.some((h) => h.dir === dir)) homes.push({ name, dir });
+      if (!homes.some((h) => h.dir === dir)) homes.push({ name, dir, email: await claudeAccount(dir) });
     } catch {
       // no projects/ here — an empty or unrelated directory
     }
@@ -436,7 +453,7 @@ async function listClaudeSessions({ includeExec, profile }) {
     for await (const file of claudeSessionFiles(path.join(home.dir, "projects"))) {
       const s = await readClaudeMeta(file);
       // Which profile a session came from matters: it is where `claude --resume` will find it.
-      if (s && (includeExec || !s.headless)) out.push({ ...s, profile: homes.length > 1 ? home.name : "" });
+      if (s && (includeExec || !s.headless)) out.push({ ...s, profile: home.name, email: home.email });
     }
   }
   return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -476,6 +493,8 @@ const TOOLS = {
     list: listClaudeSessions,
     rows: claudeUploadRows,
     noun: "session",
+    // Sessions are spread over the signed-in accounts, so the picker asks which one first.
+    accounts: true,
     hiddenHint: "Headless `claude -p` runs are hidden — add --include-exec to see them.",
   },
 };
@@ -487,11 +506,50 @@ function describe(s, i, imported, profileWidth) {
   return `${n}${mark} ${short(s.id)}  ${when(s.updatedAt)}  ${s.kind.padEnd(4)}${profile}  ${s.title || "(untitled)"}\n${" ".repeat(n.length + 2)}${s.cwd}`;
 }
 
+/**
+ * Account step, for a tool whose sessions are spread over several signed-in accounts. Shows what
+ * is on the machine and returns the chosen profile name, "" for all of them, or null to quit.
+ */
+async function pickAccount(tool, sessions, imported) {
+  const accounts = [];
+  for (const s of sessions) {
+    const hit = accounts.find((a) => a.profile === s.profile);
+    if (hit) {
+      hit.total++;
+      if (imported[s.id]) hit.imported++;
+    } else {
+      accounts.push({ profile: s.profile, email: s.email, total: 1, imported: imported[s.id] ? 1 : 0 });
+    }
+  }
+  if (accounts.length < 2) return accounts[0]?.profile ?? "";
+
+  const width = Math.max(...accounts.map((a) => a.profile.length));
+  console.log(`${tool.label} accounts on this machine (✓ = already imported):\n`);
+  accounts.forEach((a, i) => {
+    const done = a.imported ? `${a.imported} ✓` : "none";
+    console.log(
+      `${String(i + 1).padStart(3)}. ${a.profile.padEnd(width)}  ${a.email || "(not signed in)"}` +
+        `\n     ${a.total} ${tool.noun}${a.total === 1 ? "" : "s"}, ${done} imported`,
+    );
+  });
+  const answer = await ask("\nWhich account? (number, or 'all'; empty to quit) ");
+  if (!answer) return null;
+  if (answer === "all") return "";
+  const n = Number(answer);
+  if (!Number.isInteger(n) || n < 1 || n > accounts.length) fail(`Not one of the accounts: ${answer}`);
+  return accounts[n - 1].profile;
+}
+
 async function pick(tool, sessions, imported, opts) {
   const shown = sessions.slice(0, opts.limit);
   const count = shown.length < sessions.length ? `${shown.length} of ${sessions.length}` : `${sessions.length}`;
-  const profileWidth = Math.max(0, ...shown.map((s) => (s.profile ?? "").length));
-  console.log(`${tool.label} ${tool.noun}s in ${await tool.home()} (newest first, ${count}; ✓ = already imported)`);
+  // The profile column only earns its space when more than one account is in play. Judged on the
+  // whole selection, not on `shown`: --limit could truncate a mixed list down to a single account.
+  const profiles = new Set(sessions.map((s) => s.profile).filter(Boolean));
+  const profileWidth = profiles.size > 1 ? Math.max(...sessions.map((s) => (s.profile ?? "").length)) : 0;
+  const where =
+    profiles.size === 1 ? `${[...profiles][0]}${sessions[0].email ? ` (${sessions[0].email})` : ""}` : await tool.home();
+  console.log(`${tool.label} ${tool.noun}s in ${where} (newest first, ${count}; ✓ = already imported)`);
   console.log(opts.includeExec ? "" : `${tool.hiddenHint}\n`);
   shown.forEach((s, i) => console.log(describe(s, i, imported, profileWidth)));
   if (opts.list) return [];
@@ -531,7 +589,16 @@ async function runImport(tool, ids, opts) {
   if (ids.length) selected = byId(tool, sessions, ids);
   else if (opts.latest) selected = [sessions[0]];
   else if (opts.all) selected = sessions;
-  else selected = await pick(tool, sessions, imported, opts);
+  else {
+    // Pick the account first when the machine has several and the user has not already named one.
+    if (tool.accounts && !opts.profile && !opts.list) {
+      const profile = await pickAccount(tool, sessions, imported);
+      if (profile === null) return;
+      if (profile) sessions = sessions.filter((s) => s.profile === profile);
+      console.log("");
+    }
+    selected = await pick(tool, sessions, imported, opts);
+  }
   if (!selected.length) return;
 
   let done = 0;
@@ -595,8 +662,9 @@ if (values.help || !command) {
   node next-mem0-sync.mjs status
   node next-mem0-sync.mjs logout
 
-Claude Code profiles are found in ~/.claude and in every ~/.config/*claude* directory;
-set CLAUDE_CONFIG_DIR to read one specific home instead.`);
+\`claude\` asks which account first when the machine has more than one. Accounts are found
+in ~/.claude and in every ~/.config/*claude* directory; --profile <name> picks one
+straight away, and CLAUDE_CONFIG_DIR overrides where to look entirely.`);
   process.exit(values.help ? 0 : 1);
 }
 

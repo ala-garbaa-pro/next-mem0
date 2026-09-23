@@ -47,6 +47,9 @@ grabbing the single conversation you are looking at.
 - [x] Read every profile on the machine, not just `~/.claude`: one person often has several homes
       (`~/.config/claude-pro-*`), and reading only the default found 1 session where 159 exist.
       `CLAUDE_CONFIG_DIR` still wins and may name several; `--profile <name>` narrows the list.
+- [x] Two-step picker: choose the account (name, signed-in email, session count, how many are
+      already imported), then its conversations. Skipped when there is only one account, or when
+      `--profile`, `--all`, `--latest`, `--list` or explicit ids already say what to import.
 - [x] `lib/claude-session.ts` — a pure parser, same shape as `lib/codex-rollout.ts`
 - [x] Strip system reminders, CLAUDE.md injection, slash-command scaffolding and local command output
 - [x] Drop `thinking`, `tool_use` and `tool_result` blocks; merge the assistant rows a tool call split apart
