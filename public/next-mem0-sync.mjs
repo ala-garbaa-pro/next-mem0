@@ -13,8 +13,10 @@
  *
  * Options for `codex` and `claude`: --replace (refresh sessions that were imported before),
  * --limit N (only the N newest), --list (print and exit), --include-exec (also show headless runs
- * — scripts, SDKs, next-mem0's own chat panel — hidden by default). Env: CODEX_HOME (default
- * ~/.codex), CLAUDE_CONFIG_DIR (default ~/.claude), NEXT_MEM0_HOME (where the session is stored,
+ * — scripts, SDKs, next-mem0's own chat panel — hidden by default). `claude` also takes
+ * --profile <name>, since one machine often holds several Claude Code homes: ~/.claude and every
+ * ~/.config/*claude* directory are read together unless CLAUDE_CONFIG_DIR names one. Env:
+ * CODEX_HOME (default ~/.codex), CLAUDE_CONFIG_DIR, NEXT_MEM0_HOME (where the session is stored,
  * default ~/.next-mem0).
  *
  * Each CLI's own prompt scaffolding is stripped server-side — environment context, plugin lists and
@@ -33,7 +35,7 @@ const VERSION = "1";
 const HOME = process.env.NEXT_MEM0_HOME ?? path.join(os.homedir(), ".next-mem0");
 const CONFIG = path.join(HOME, "sync.json");
 const CODEX_HOME = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
-const CLAUDE_HOME = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
+const CONFIG_ROOT = process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config");
 
 // ---------- tiny helpers ----------
 
@@ -319,6 +321,46 @@ const isClaudeMessageRow = (row) =>
   row.isCompactSummary !== true &&
   obj(row.message);
 
+/**
+ * Every Claude Code home on this machine. One person often has several: `claude` keeps its data in
+ * ~/.claude by default, but a profile started with CLAUDE_CONFIG_DIR gets its own directory, and
+ * those conventionally sit side by side under ~/.config (claude-pro-ala, claude-pro-mouna, …).
+ * Looking only at ~/.claude would miss almost everything on such a machine.
+ *
+ * CLAUDE_CONFIG_DIR still wins when it is set — that is the profile the user is asking about — and
+ * it may name several homes, separated the way the platform separates PATH entries.
+ */
+async function claudeHomes() {
+  const homes = [];
+  const add = async (dir, name) => {
+    try {
+      // A home worth reading is one that has sessions in it.
+      await fs.stat(path.join(dir, "projects"));
+      if (!homes.some((h) => h.dir === dir)) homes.push({ name, dir });
+    } catch {
+      // no projects/ here — an empty or unrelated directory
+    }
+  };
+
+  const explicit = process.env.CLAUDE_CONFIG_DIR;
+  if (explicit) {
+    for (const dir of explicit.split(path.delimiter).filter(Boolean)) await add(path.resolve(dir), path.basename(dir));
+    return homes;
+  }
+
+  await add(path.join(os.homedir(), ".claude"), "default");
+  let entries = [];
+  try {
+    entries = await fs.readdir(CONFIG_ROOT, { withFileTypes: true });
+  } catch {
+    // no ~/.config on this machine
+  }
+  for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (e.isDirectory() && /claude/i.test(e.name)) await add(path.join(CONFIG_ROOT, e.name), e.name);
+  }
+  return homes;
+}
+
 async function* claudeSessionFiles(dir) {
   let entries;
   try {
@@ -359,7 +401,12 @@ async function readClaudeMeta(file) {
     sawMessage = true;
     cwd ||= str(row.cwd);
     entrypoint ||= str(row.entrypoint);
-    if (row.type === "user" && !firstUser) firstUser = cleanClaudeUserText(claudeText(row.message));
+    // Skip bare local commands ("/login", "/model") the way the server-side parser does, so the
+    // title in this list is the one the imported conversation will actually get.
+    if (row.type === "user" && !firstUser) {
+      const text = cleanClaudeUserText(claudeText(row.message));
+      if (text && !/^\/[\w:.-]+([ \t][^\n]*)?$/.test(text)) firstUser = text;
+    }
   }
   if (!id || !sawMessage) return null;
   const stat = await fs.stat(file);
@@ -377,11 +424,20 @@ async function readClaudeMeta(file) {
   };
 }
 
-async function listClaudeSessions({ includeExec }) {
+async function listClaudeSessions({ includeExec, profile }) {
+  let homes = await claudeHomes();
+  if (profile) {
+    const wanted = homes.filter((h) => h.name === profile || h.name.includes(profile));
+    if (!wanted.length) fail(`No Claude Code profile matches "${profile}". Found: ${homes.map((h) => h.name).join(", ") || "none"}`);
+    homes = wanted;
+  }
   const out = [];
-  for await (const file of claudeSessionFiles(path.join(CLAUDE_HOME, "projects"))) {
-    const s = await readClaudeMeta(file);
-    if (s && (includeExec || !s.headless)) out.push(s);
+  for (const home of homes) {
+    for await (const file of claudeSessionFiles(path.join(home.dir, "projects"))) {
+      const s = await readClaudeMeta(file);
+      // Which profile a session came from matters: it is where `claude --resume` will find it.
+      if (s && (includeExec || !s.headless)) out.push({ ...s, profile: homes.length > 1 ? home.name : "" });
+    }
   }
   return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
@@ -401,7 +457,7 @@ async function claudeUploadRows(file) {
 const TOOLS = {
   codex: {
     label: "Codex",
-    home: CODEX_HOME,
+    home: async () => CODEX_HOME,
     route: "/api/import/codex",
     list: listSessions,
     rows: uploadRows,
@@ -410,7 +466,12 @@ const TOOLS = {
   },
   claude: {
     label: "Claude Code",
-    home: CLAUDE_HOME,
+    // Several profiles are normal here, so the header names them all rather than one path.
+    home: async () => {
+      const homes = await claudeHomes();
+      if (!homes.length) return path.join(os.homedir(), ".claude");
+      return homes.length === 1 ? homes[0].dir : homes.map((h) => `${h.name} (${h.dir})`).join(", ");
+    },
     route: "/api/import/claude-code",
     list: listClaudeSessions,
     rows: claudeUploadRows,
@@ -419,18 +480,20 @@ const TOOLS = {
   },
 };
 
-function describe(s, i, imported) {
+function describe(s, i, imported, profileWidth) {
   const n = `${String(i + 1).padStart(3)}. `;
   const mark = imported[s.id] ? "✓" : " ";
-  return `${n}${mark} ${short(s.id)}  ${when(s.updatedAt)}  ${s.kind.padEnd(4)}  ${s.title || "(untitled)"}\n${" ".repeat(n.length + 2)}${s.cwd}`;
+  const profile = profileWidth ? `  ${(s.profile ?? "").padEnd(profileWidth)}` : "";
+  return `${n}${mark} ${short(s.id)}  ${when(s.updatedAt)}  ${s.kind.padEnd(4)}${profile}  ${s.title || "(untitled)"}\n${" ".repeat(n.length + 2)}${s.cwd}`;
 }
 
 async function pick(tool, sessions, imported, opts) {
   const shown = sessions.slice(0, opts.limit);
   const count = shown.length < sessions.length ? `${shown.length} of ${sessions.length}` : `${sessions.length}`;
-  console.log(`${tool.label} ${tool.noun}s in ${tool.home} (newest first, ${count}; ✓ = already imported)`);
+  const profileWidth = Math.max(0, ...shown.map((s) => (s.profile ?? "").length));
+  console.log(`${tool.label} ${tool.noun}s in ${await tool.home()} (newest first, ${count}; ✓ = already imported)`);
   console.log(opts.includeExec ? "" : `${tool.hiddenHint}\n`);
-  shown.forEach((s, i) => console.log(describe(s, i, imported)));
+  shown.forEach((s, i) => console.log(describe(s, i, imported, profileWidth)));
   if (opts.list) return [];
   const answer = await ask("\nImport which? (numbers, e.g. 1 3-5, or 'all'; empty to quit) ");
   if (!answer) return [];
@@ -461,7 +524,7 @@ async function runImport(tool, ids, opts) {
   const { imported } = await api(cfg, tool.route);
   const sessions = await tool.list(opts);
   if (!sessions.length) {
-    fail(`No ${tool.label} ${tool.noun}s found under ${tool.home}${opts.includeExec ? "" : " (try --include-exec)"}`);
+    fail(`No ${tool.label} ${tool.noun}s found under ${await tool.home()}${opts.includeExec ? "" : " (try --include-exec)"}`);
   }
 
   let selected;
@@ -516,6 +579,7 @@ const { values, positionals } = parseArgs({
     list: { type: "boolean", default: false },
     replace: { type: "boolean", default: false },
     limit: { type: "string" },
+    profile: { type: "string" },
     help: { type: "boolean", short: "h", default: false },
   },
 });
@@ -527,8 +591,12 @@ if (values.help || !command) {
   node next-mem0-sync.mjs login [server-url]
   node next-mem0-sync.mjs codex  [--latest | --all | --list | <session-id>…] [--replace] [--limit N] [--include-exec]
   node next-mem0-sync.mjs claude [--latest | --all | --list | <session-id>…] [--replace] [--limit N] [--include-exec]
+                                 [--profile <name>]   only one Claude Code profile
   node next-mem0-sync.mjs status
-  node next-mem0-sync.mjs logout`);
+  node next-mem0-sync.mjs logout
+
+Claude Code profiles are found in ~/.claude and in every ~/.config/*claude* directory;
+set CLAUDE_CONFIG_DIR to read one specific home instead.`);
   process.exit(values.help ? 0 : 1);
 }
 

@@ -43,7 +43,10 @@ grabbing the single conversation you are looking at.
 
 ## Claude — CLI (Claude Code)
 
-- [x] Locate sessions: `~/.claude/projects/<slug>/<session-id>.jsonl` (`CLAUDE_CONFIG_DIR` overrides the home)
+- [x] Locate sessions: `~/.claude/projects/<slug>/<session-id>.jsonl`
+- [x] Read every profile on the machine, not just `~/.claude`: one person often has several homes
+      (`~/.config/claude-pro-*`), and reading only the default found 1 session where 159 exist.
+      `CLAUDE_CONFIG_DIR` still wins and may name several; `--profile <name>` narrows the list.
 - [x] `lib/claude-session.ts` — a pure parser, same shape as `lib/codex-rollout.ts`
 - [x] Strip system reminders, CLAUDE.md injection, slash-command scaffolding and local command output
 - [x] Drop `thinking`, `tool_use` and `tool_result` blocks; merge the assistant rows a tool call split apart
@@ -56,7 +59,7 @@ grabbing the single conversation you are looking at.
 - [x] Hide headless runs by default (non-`cli` entrypoint), same as Codex's `--include-exec`
 - [x] Unit tests: `lib/claude-session.test.ts` (`bun run test:unit`)
 - [ ] Swept over 133 local sessions: 127 parsed, 6 empty, 0 threw. Re-check after a Claude Code
-      format change — there is no fixture in the repo, the sweep ran against `~/.claude`.
+      format change — there is no fixture in the repo, the sweep ran against a real profile.
 
 ## Shared
 
