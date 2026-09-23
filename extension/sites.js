@@ -28,7 +28,20 @@ export const SITES = [
       return m ? `claude:${m[1]}` : null;
     },
   },
-  // { id: "gemini",  label: "Gemini",  source: "gemini",  script: "content/gemini.js",  match(url) { ... } },
+  {
+    id: "gemini",
+    label: "Gemini",
+    source: "gemini",
+    script: "content/gemini.js",
+    match(url) {
+      const u = new URL(url);
+      if (!/^gemini\.google\.com$/.test(u.hostname)) return null;
+      // /app/<id>, /u/1/app/<id> for a second account, and a shared /share/<id>. Gemini's ids are
+      // plain hex without dashes, which is why this is looser than the ChatGPT and Claude tests.
+      const m = /\/(?:app|share)\/([0-9a-z_-]{8,})/i.exec(u.pathname);
+      return m ? `gemini:${m[1]}` : null;
+    },
+  },
 ];
 
 export function detectSite(url) {

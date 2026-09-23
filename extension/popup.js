@@ -45,7 +45,7 @@ async function init() {
     } catch {
       where = "\nThis tab has no address the extension can read.";
     }
-    $("hint").textContent = `Supported: ${SITES.map((s) => s.label).join(", ")}. Gemini is next.${where}`;
+    $("hint").textContent = `Supported: ${SITES.map((s) => s.label).join(", ")}.${where}`;
     $("hint").style.whiteSpace = "pre-line";
     $("hint").hidden = false;
     return;
@@ -58,7 +58,7 @@ async function init() {
   $("card").hidden = false;
   $("site-badge").textContent = detected.site.label;
   $("site-badge").dataset.source = detected.site.source;
-  $("page-title").textContent = tab.title?.replace(/\s*[|·-]\s*(ChatGPT|Claude)\s*$/i, "") || "Conversation";
+  $("page-title").textContent = tab.title?.replace(/\s*[|·-]\s*(ChatGPT|Claude|Gemini)\s*$/i, "") || "Conversation";
   renderPrevious();
 }
 

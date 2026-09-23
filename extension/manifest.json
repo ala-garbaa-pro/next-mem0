@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "next-mem0 — save AI chats",
   "version": "0.1.0",
-  "description": "Import the conversation you are looking at (ChatGPT and Claude; Gemini next) into your local next-mem0.",
+  "description": "Import the conversation you are looking at (ChatGPT, Claude or Gemini) into your local next-mem0.",
   "minimum_chrome_version": "116",
   "action": {
     "default_popup": "popup.html",

@@ -35,13 +35,17 @@ popup.js  ──executeScript──▶  content/<site>.js   (reads the conversat
 - **Claude** (`content/claude.js`): the same two strategies against claude.ai — its backend returns
   the `chat_messages` array the official export uses. Works on `/chat/<id>` and on a shared
   `/share/<id>` snapshot.
+- **Gemini** (`content/gemini.js`): DOM only. gemini.google.com has no readable JSON endpoint for a
+  conversation — the page talks to a batchexecute RPC of positional arrays with no field names — so
+  the rendered `<user-query>` / `<model-response>` turns are read instead. Gemini virtualises long
+  conversations, so scroll to the top before importing one.
 - The POST happens in the service worker so it finishes even if you close the popup while
   next-mem0 is embedding the messages.
 - `/api/import` requires the Better Auth session cookie (the fetch runs with `credentials: "include"`)
   and deliberately sends no CORS headers: the extension has host permission for localhost, so it
   can call it, but a random web page cannot write into your store.
 
-## Adding a site (Gemini, …)
+## Adding a site
 
 1. Add an entry to `SITES` in `sites.js`: `id`, `label`, `source` (one of next-mem0's sources), `script`,
    and a `match(url)` that returns a stable key like `claude:<id>` or `null`.
