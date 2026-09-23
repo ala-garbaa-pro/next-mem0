@@ -11,7 +11,7 @@ export const SITES = [
     script: "content/chatgpt.js",
     match(url) {
       const u = new URL(url);
-      if (!/^(chatgpt\.com|chat\.openai\.com)$/.test(u.hostname)) return null;
+      if (!/^(www\.)?(chatgpt\.com|chat\.openai\.com)$/.test(u.hostname)) return null;
       const m = /\/c\/([0-9a-f-]{20,})/i.exec(u.pathname) ?? /\/share\/([0-9a-f-]{20,})/i.exec(u.pathname);
       return m ? `chatgpt:${m[1]}` : null;
     },

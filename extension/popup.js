@@ -36,7 +36,17 @@ async function init() {
 
   if (!detected) {
     $("status").textContent = "Open a conversation to import it.";
-    $("hint").textContent = `Supported: ${SITES.map((s) => s.label).join(", ")}. Gemini is next.`;
+    // Say what this tab actually is. "Not a conversation page" is only useful with the page named:
+    // a site's home, a project or a settings page all land here and look identical otherwise.
+    let where = "";
+    try {
+      const u = new URL(tab?.url ?? "");
+      where = `\nThis tab: ${u.hostname}${u.pathname}`;
+    } catch {
+      where = "\nThis tab has no address the extension can read.";
+    }
+    $("hint").textContent = `Supported: ${SITES.map((s) => s.label).join(", ")}. Gemini is next.${where}`;
+    $("hint").style.whiteSpace = "pre-line";
     $("hint").hidden = false;
     return;
   }
