@@ -4,10 +4,11 @@ Where your chats can come from. Four quadrants: **web** and **CLI**, for ChatGPT
 "Web" has two routes of its own — the provider's bulk data export, and the browser extension
 grabbing the single conversation you are looking at.
 
-|             | Web — data export | Web — extension | CLI                |
-| ----------- | ----------------- | --------------- | ------------------ |
-| **ChatGPT** | done              | done            | done (Codex)       |
-| **Claude**  | done              | done            | done (Claude Code) |
+|             | Web — data export | Web — extension | CLI                   |
+| ----------- | ----------------- | --------------- | --------------------- |
+| **ChatGPT** | done              | done            | done (Codex)          |
+| **Claude**  | done              | done            | done (Claude Code)    |
+| **Gemini**  | n/a               | done            | done (Antigravity)    |
 
 ## ChatGPT — web
 
@@ -64,11 +65,44 @@ grabbing the single conversation you are looking at.
 - [ ] Swept over 133 local sessions: 127 parsed, 6 empty, 0 threw. Re-check after a Claude Code
       format change — there is no fixture in the repo, the sweep ran against a real profile.
 
+## Gemini — web
+
+- [x] Extension: `extension/content/gemini.js`, matching `/app/<id>`, `/u/<n>/app/<id>` and `/share/<id>`
+- [x] DOM only — gemini.google.com has no readable JSON endpoint, just a batchexecute RPC of
+      positional arrays; turns are matched by the `<user-query>` / `<model-response>` tags rather
+      than by class names, which churn between releases
+- [ ] Only rendered turns are captured: Gemini virtualises long conversations, so the popup tells
+      the user to scroll to the top first. An auto-scroll pass would fix it properly.
+- [ ] Google takeout of Gemini chats is not parsed (no data-export path, unlike ChatGPT and Claude)
+
+## Gemini — CLI (Antigravity)
+
+- [x] Read conversations from the per-surface `conversations` directories under `~/.gemini`,
+      covering all three surfaces: `antigravity-cli` (`agy`), `antigravity` and `antigravity-ide`
+- [x] `lib/protobuf.ts` — a schemaless wire-format reader; Antigravity stores steps as protobuf
+      with no `.proto` shipped, so text is addressed by field number (`19.2` user, `20.1` assistant)
+- [x] `lib/antigravity-session.ts` — steps → conversation, keeping only step kinds 14 and 15
+- [x] Drop the injected kinds that read like the user but are not: `90` (`<EPHEMERAL_MESSAGE>`) and
+      `98` (`# Conversation History`), plus tool calls, plans and errors
+- [x] Strip control characters — Postgres rejects NUL in a text column, and real conversations
+      contain them
+- [x] Route `POST /api/import/gemini-cli`; the client sends base64 steps, the server decodes
+- [x] `gemini` command in `next-mem0-sync.mjs`, with the surface shown as the `kind` column
+- [x] Unit tests over hand-encoded protobuf fixtures (`lib/antigravity-session.test.ts`)
+- [ ] Needs Node 22.5+ for `node:sqlite` (the other commands still run on Node 20); the command
+      says so rather than failing obscurely
+- [ ] Field numbers are read off Antigravity 1.2.9. A format change makes an import come back
+      empty rather than wrong, but there is no fixture in the repo to catch it — the sweep ran
+      against `~/.gemini`: 13 conversations, 84 messages, 0 threw.
+- [ ] No resume: `/api/chat` only knows the `claude` and `codex` providers, so an imported
+      Antigravity chat cannot be continued in place. The id is stored for de-duplication only.
+- [ ] `19.2` sometimes holds attached file context rather than the prompt, which makes for an ugly
+      title on those conversations
+
 ## Shared
 
 - [x] `Source` union covers `claude | chatgpt | codex | gemini | other` (`lib/types.ts`)
 - [x] Claude Code imports use source `"claude"`, not a new value: `/api/chat` only resumes a CLI
       session when `conversation.source === provider`, and the provider for the `claude` CLI is
       `"claude"`. A claude.ai import is told apart by having no `cliSessionId`.
-- [ ] Gemini is in the union but has no importer
 - [ ] De-duplication across sources (same chat imported from web and CLI)

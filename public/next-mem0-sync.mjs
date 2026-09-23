@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 /**
- * next-mem0-sync — import the chats you had with the Codex and Claude Code CLIs into your next-mem0.
+ * next-mem0-sync — import the chats you had with your CLIs into your next-mem0: Codex, Claude Code
+ * and Antigravity (the Gemini CLI `agy` and its IDE).
  *
- * Runs on YOUR machine (that is where ~/.codex/sessions and ~/.claude/projects live), talks to the
- * next-mem0 server over HTTP, needs nothing but Node 20+. Download it from the Import page, then:
+ * Runs on YOUR machine (that is where ~/.codex, ~/.claude and ~/.gemini live), talks to the
+ * next-mem0 server over HTTP, needs nothing but Node 20+ — except `gemini`, which reads SQLite and
+ * so wants Node 22.5+. Download it from the Import page, then:
  *
  *   node next-mem0-sync.mjs login https://your-next-mem0.example    # once; stores the session
  *   node next-mem0-sync.mjs codex                                    # list threads, pick, import
  *   node next-mem0-sync.mjs claude                                   # pick account, then sessions
+ *   node next-mem0-sync.mjs gemini                                   # Antigravity conversations
  *   node next-mem0-sync.mjs codex --latest | --all | <session-id>…   # without the picker
  *   node next-mem0-sync.mjs status | logout
  *
@@ -16,8 +19,8 @@
  * — scripts, SDKs, next-mem0's own chat panel — hidden by default). `claude` also takes
  * --profile <name>, since one machine often holds several Claude Code homes: ~/.claude and every
  * ~/.config/*claude* directory are read together unless CLAUDE_CONFIG_DIR names one. Env:
- * CODEX_HOME (default ~/.codex), CLAUDE_CONFIG_DIR, NEXT_MEM0_HOME (where the session is stored,
- * default ~/.next-mem0).
+ * CODEX_HOME (default ~/.codex), CLAUDE_CONFIG_DIR, GEMINI_HOME (default ~/.gemini),
+ * NEXT_MEM0_HOME (where the session is stored, default ~/.next-mem0).
  *
  * Each CLI's own prompt scaffolding is stripped server-side — environment context, plugin lists and
  * AGENTS.md for Codex; system reminders, CLAUDE.md and slash-command wrappers for Claude Code — and
@@ -468,7 +471,185 @@ async function claudeUploadRows(file) {
   return rows;
 }
 
-// ---------- `codex` / `claude` commands ----------
+// ---------- Antigravity (Gemini CLI / IDE) conversations on this machine ----------
+
+/**
+ * Antigravity stores a conversation as a SQLite database, so this command needs node:sqlite —
+ * Node 22.5+. The other commands read JSONL and still work on Node 20, so the import is done here
+ * rather than at the top of the file, and a missing module is reported as a version problem.
+ */
+async function openSqlite() {
+  try {
+    const { DatabaseSync } = await import("node:sqlite");
+    return DatabaseSync;
+  } catch {
+    fail(
+      `Reading Antigravity conversations needs Node 22.5+ for its built-in SQLite (this is Node ${process.versions.node}).\n` +
+        `The codex and claude commands work on Node 20 — only gemini needs the newer runtime.`,
+    );
+  }
+}
+
+/** Where each Antigravity surface keeps its conversations, and what to call it in the list. */
+const ANTIGRAVITY_SURFACES = [
+  { dir: "antigravity-cli", kind: "cli" },
+  { dir: "antigravity", kind: "app" },
+  { dir: "antigravity-ide", kind: "ide" },
+];
+
+const GEMINI_HOME = process.env.GEMINI_HOME ?? path.join(os.homedir(), ".gemini");
+
+/** Step kinds that carry the conversation; keep in sync with lib/antigravity-session.ts. */
+const AGY_STEP_USER = 14;
+const AGY_STEP_ASSISTANT = 15;
+
+/**
+ * Open one conversation database read-only. Antigravity may be running and writing to it, so the
+ * connection must not take a write lock; a WAL left behind by a crash is simply not replayed.
+ */
+async function withAgyDb(file, fn) {
+  const DatabaseSync = await openSqlite();
+  let db;
+  try {
+    db = new DatabaseSync(file, { readOnly: true });
+    return fn(db);
+  } catch {
+    return null; // a database being written, or from a newer Antigravity than we understand
+  } finally {
+    try {
+      db?.close();
+    } catch {
+      /* already closed */
+    }
+  }
+}
+
+async function readAgyMeta(file, kind) {
+  const id = path.basename(file, ".db");
+  const info = await withAgyDb(file, (db) => {
+    const rows = db.prepare(`select idx, step_type, step_payload from steps order by idx`).all();
+    let firstUser = "";
+    let turns = 0;
+    for (const r of rows) {
+      if (r.step_type !== AGY_STEP_USER && r.step_type !== AGY_STEP_ASSISTANT) continue;
+      if (!r.step_payload) continue;
+      // Only the first user turn is needed for a title; the server does the real parsing.
+      if (r.step_type === AGY_STEP_USER && !firstUser) firstUser = agyTextAt(Buffer.from(r.step_payload), "19.2");
+      turns++;
+    }
+    return { turns, firstUser };
+  });
+  if (!info || !info.turns) return null;
+  const stat = await fs.stat(file);
+  return {
+    id,
+    file,
+    title: info.firstUser.split("\n")[0].slice(0, 80),
+    cwd: "",
+    kind,
+    headless: false,
+    startedAt: stat.birthtime.toISOString(),
+    updatedAt: stat.mtime.toISOString(),
+  };
+}
+
+/**
+ * Light copy of lib/protobuf.ts, only to show a readable title in the list — the server does the
+ * real parsing. Walks the protobuf to one dotted field path ("19.2"). A length-delimited field can
+ * read as both a string and a nested message and nothing says which, so both are followed, exactly
+ * as the server does; see lib/protobuf.ts for why guessing either way goes wrong.
+ */
+function agyTextAt(buf, wantPath) {
+  const want = wantPath.split(".").map(Number);
+  let found = "";
+  const clean = (b) => {
+    const s = b.toString("utf8");
+    // Detecting control characters is the point here: they are what tells a nested protobuf
+    // message apart from a field that really holds text.
+    // eslint-disable-next-line no-control-regex
+    return !s.includes("�") && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(s) ? s : null;
+  };
+  const walk = (b, depth, path) => {
+    if (found || depth > 16) return;
+    let i = 0;
+    while (i < b.length) {
+      let tag = 0, scale = 1, byte;
+      do {
+        if (i >= b.length) return;
+        byte = b[i++];
+        tag += (byte & 0x7f) * scale;
+        scale *= 128;
+      } while (byte & 0x80);
+      const field = Math.floor(tag / 8);
+      const wire = tag % 8;
+      if (!field) return;
+      if (wire === 0) {
+        do {
+          if (i >= b.length) return;
+        } while (b[i++] & 0x80);
+      } else if (wire === 1) i += 8;
+      else if (wire === 5) i += 4;
+      else if (wire === 2) {
+        let len = 0, s2 = 1, b2;
+        do {
+          if (i >= b.length) return;
+          b2 = b[i++];
+          len += (b2 & 0x7f) * s2;
+          s2 *= 128;
+        } while (b2 & 0x80);
+        if (i + len > b.length) return;
+        const sub = b.subarray(i, i + len);
+        i += len;
+        const here = [...path, field];
+        const matches = here.length <= want.length && here.every((f, n) => f === want[n]);
+        if (!matches) continue;
+        if (here.length === want.length) {
+          const text = clean(sub);
+          if (text?.trim()) {
+            found = text;
+            return;
+          }
+        }
+        walk(sub, depth + 1, here);
+      } else return;
+    }
+  };
+  walk(buf, 0, []);
+  return found.trim();
+}
+
+async function listAgySessions() {
+  const out = [];
+  for (const { dir, kind } of ANTIGRAVITY_SURFACES) {
+    const conversations = path.join(GEMINI_HOME, dir, "conversations");
+    let entries = [];
+    try {
+      entries = await fs.readdir(conversations);
+    } catch {
+      continue;
+    }
+    for (const name of entries) {
+      if (!name.endsWith(".db")) continue;
+      const s = await readAgyMeta(path.join(conversations, name), kind);
+      if (s) out.push(s);
+    }
+  }
+  return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/** Only the steps that carry a turn; tool calls, plans and injected text stay on this machine. */
+async function agyUploadRows(file) {
+  const steps = await withAgyDb(file, (db) =>
+    db
+      .prepare(`select idx, step_type, step_payload from steps where step_type in (?, ?) order by idx`)
+      .all(AGY_STEP_USER, AGY_STEP_ASSISTANT)
+      .filter((r) => r.step_payload)
+      .map((r) => ({ idx: r.idx, stepType: r.step_type, payload: Buffer.from(r.step_payload).toString("base64") })),
+  );
+  return steps ?? [];
+}
+
+// ---------- `codex` / `claude` / `gemini` commands ----------
 
 /** The two CLIs differ only in where their logs live, how they are read, and which route takes them. */
 const TOOLS = {
@@ -497,13 +678,27 @@ const TOOLS = {
     accounts: true,
     hiddenHint: "Headless `claude -p` runs are hidden — add --include-exec to see them.",
   },
+  gemini: {
+    label: "Antigravity",
+    home: async () => GEMINI_HOME,
+    route: "/api/import/gemini-cli",
+    list: listAgySessions,
+    rows: agyUploadRows,
+    // Its conversations are protobuf in SQLite, so the server is sent steps rather than JSONL rows.
+    payloadKey: "steps",
+    noun: "conversation",
+    hiddenHint: "The cli, app and ide surfaces are listed together.",
+  },
 };
 
 function describe(s, i, imported, profileWidth) {
   const n = `${String(i + 1).padStart(3)}. `;
   const mark = imported[s.id] ? "✓" : " ";
   const profile = profileWidth ? `  ${(s.profile ?? "").padEnd(profileWidth)}` : "";
-  return `${n}${mark} ${short(s.id)}  ${when(s.updatedAt)}  ${s.kind.padEnd(4)}${profile}  ${s.title || "(untitled)"}\n${" ".repeat(n.length + 2)}${s.cwd}`;
+  // Antigravity does not record a working directory, so that second line is dropped rather than
+  // printed blank under every row.
+  const where = s.cwd ? `\n${" ".repeat(n.length + 2)}${s.cwd}` : "";
+  return `${n}${mark} ${short(s.id)}  ${when(s.updatedAt)}  ${s.kind.padEnd(4)}${profile}  ${s.title || "(untitled)"}${where}`;
 }
 
 /**
@@ -617,7 +812,7 @@ async function runImport(tool, ids, opts) {
         method: "POST",
         body: JSON.stringify({
           session: { id: s.id, name: s.name, cwd: s.cwd, startedAt: s.startedAt, updatedAt: s.updatedAt },
-          rows,
+          [tool.payloadKey ?? "rows"]: rows,
           replace: opts.replace,
         }),
       });
@@ -660,6 +855,7 @@ if (values.help || !command) {
   node next-mem0-sync.mjs codex  [--latest | --all | --list | <session-id>…] [--replace] [--limit N] [--include-exec]
   node next-mem0-sync.mjs claude [--latest | --all | --list | <session-id>…] [--replace] [--limit N] [--include-exec]
                                  [--profile <name>]   only one Claude Code profile
+  node next-mem0-sync.mjs gemini [--latest | --all | --list | <conversation-id>…] [--replace] [--limit N]
   node next-mem0-sync.mjs status
   node next-mem0-sync.mjs logout
 
