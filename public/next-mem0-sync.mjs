@@ -1,23 +1,26 @@
 #!/usr/bin/env node
 /**
- * next-mem0-sync — import the chats you had with the Codex CLI into your next-mem0.
+ * next-mem0-sync — import the chats you had with the Codex and Claude Code CLIs into your next-mem0.
  *
- * Runs on YOUR machine (that is where ~/.codex/sessions lives), talks to the next-mem0 server
- * over HTTP, needs nothing but Node 20+. Download it from the Import page of your next-mem0, then:
+ * Runs on YOUR machine (that is where ~/.codex/sessions and ~/.claude/projects live), talks to the
+ * next-mem0 server over HTTP, needs nothing but Node 20+. Download it from the Import page, then:
  *
  *   node next-mem0-sync.mjs login https://your-next-mem0.example    # once; stores the session
  *   node next-mem0-sync.mjs codex                                    # list threads, pick, import
- *   node next-mem0-sync.mjs codex --latest | --all | <thread-id>…    # without the picker
+ *   node next-mem0-sync.mjs claude                                   # same, for Claude Code
+ *   node next-mem0-sync.mjs codex --latest | --all | <session-id>…   # without the picker
  *   node next-mem0-sync.mjs status | logout
  *
- * Options for `codex`: --replace (refresh threads that were imported before), --limit N (only
- * the N newest), --list (print and exit), --include-exec (also show headless `codex exec`
- * runs — scripts, SDKs, next-mem0's own chat panel — hidden by default). Env: CODEX_HOME
- * (default ~/.codex), NEXT_MEM0_HOME (where the session is stored, default ~/.next-mem0).
+ * Options for `codex` and `claude`: --replace (refresh sessions that were imported before),
+ * --limit N (only the N newest), --list (print and exit), --include-exec (also show headless runs
+ * — scripts, SDKs, next-mem0's own chat panel — hidden by default). Env: CODEX_HOME (default
+ * ~/.codex), CLAUDE_CONFIG_DIR (default ~/.claude), NEXT_MEM0_HOME (where the session is stored,
+ * default ~/.next-mem0).
  *
- * Codex's own prompt scaffolding (environment context, plugin lists, AGENTS.md, image tags) is
- * stripped server-side, reasoning and tool calls are never uploaded, and the Codex thread id is
- * kept — continuing an imported chat inside next-mem0 resumes that same thread.
+ * Each CLI's own prompt scaffolding is stripped server-side — environment context, plugin lists and
+ * AGENTS.md for Codex; system reminders, CLAUDE.md and slash-command wrappers for Claude Code — and
+ * reasoning and tool calls are never uploaded. The session id is kept, so continuing an imported
+ * chat inside next-mem0 resumes that same session in that same CLI.
  */
 import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
@@ -30,6 +33,7 @@ const VERSION = "1";
 const HOME = process.env.NEXT_MEM0_HOME ?? path.join(os.homedir(), ".next-mem0");
 const CONFIG = path.join(HOME, "sync.json");
 const CODEX_HOME = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
+const CLAUDE_HOME = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
 
 // ---------- tiny helpers ----------
 
@@ -167,9 +171,14 @@ async function login(serverArg) {
 async function status() {
   const cfg = await readConfig();
   if (!cfg.server) return console.log("Not signed in. Run: node next-mem0-sync.mjs login <server-url>");
-  const who = await api(cfg, "/api/import/codex");
-  const n = Object.keys(who.imported).length;
-  console.log(`${cfg.server} — signed in as ${who.user}; ${n} Codex thread(s) imported so far`);
+  let who;
+  const counts = [];
+  for (const tool of Object.values(TOOLS)) {
+    const res = await api(cfg, tool.route);
+    who ??= res;
+    counts.push(`${Object.keys(res.imported).length} ${tool.label} ${tool.noun}(s)`);
+  }
+  console.log(`${cfg.server} — signed in as ${who.user}; ${counts.join(", ")} imported so far`);
 }
 
 async function logout() {
@@ -277,7 +286,138 @@ async function uploadRows(file) {
   return rows;
 }
 
-// ---------- `codex` command ----------
+// ---------- Claude Code sessions on this machine ----------
+
+/** Light copy of lib/claude-session.ts cleanUserText(), only to show a readable title in the list. */
+function cleanClaudeUserText(raw) {
+  return raw
+    .replace(
+      /<(system-reminder|command-message|local-command-stdout|local-command-stderr|ide_selection|ide_opened_file)>[\s\S]*?<\/\1>/g,
+      "",
+    )
+    .replace(/<command-name>([\s\S]*?)<\/command-name>(?:\s*<command-args>([\s\S]*?)<\/command-args>)?/g, (_a, n, g) =>
+      `${n.trim()} ${(g ?? "").trim()}`.trim(),
+    )
+    .replace(/<pasted_content\b[^>]*>[\s\S]*?<\/pasted_content>/g, "")
+    .trim();
+}
+
+/** Text of a Claude Code message: `content` is a bare string or an array whose `text` blocks we keep. */
+function claudeText(message) {
+  if (!obj(message)) return "";
+  const c = message.content;
+  if (typeof c === "string") return c;
+  if (!Array.isArray(c)) return "";
+  return c.filter((p) => obj(p) && p.type === "text").map((p) => str(p.text)).join("\n");
+}
+
+/** Rows that carry a message the user actually saw in their own thread. */
+const isClaudeMessageRow = (row) =>
+  (row.type === "user" || row.type === "assistant") &&
+  row.isSidechain !== true &&
+  row.isMeta !== true &&
+  row.isCompactSummary !== true &&
+  obj(row.message);
+
+async function* claudeSessionFiles(dir) {
+  let entries;
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const e of entries) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) yield* claudeSessionFiles(p);
+    else if (e.isFile() && e.name.endsWith(".jsonl")) yield p;
+  }
+}
+
+/**
+ * Metadata of one session. Unlike a Codex rollout there is no header row, so the id, cwd and title
+ * are gathered as the file is walked: `ai-title` rows hold the title Claude Code generated (the last
+ * one wins — it is rewritten as the chat grows) and the first typed user turn is the fallback.
+ */
+async function readClaudeMeta(file) {
+  let id = "";
+  let cwd = "";
+  let name = "";
+  let firstUser = "";
+  let entrypoint = "";
+  let sawMessage = false;
+  for await (const row of jsonLines(file)) {
+    id ||= str(row.sessionId);
+    if (row.type === "ai-title") {
+      name = str(row.aiTitle).trim() || name;
+      continue;
+    }
+    if (row.type === "summary") {
+      name ||= str(row.summary).trim();
+      continue;
+    }
+    if (!isClaudeMessageRow(row)) continue;
+    sawMessage = true;
+    cwd ||= str(row.cwd);
+    entrypoint ||= str(row.entrypoint);
+    if (row.type === "user" && !firstUser) firstUser = cleanClaudeUserText(claudeText(row.message));
+  }
+  if (!id || !sawMessage) return null;
+  const stat = await fs.stat(file);
+  return {
+    id,
+    file,
+    name: name || undefined,
+    title: name || firstUser.split("\n")[0].slice(0, 80),
+    cwd,
+    // `claude -p` from a script, an SDK or next-mem0's own chat panel reports a non-"cli" entrypoint.
+    kind: entrypoint === "cli" || !entrypoint ? "cli" : "exec",
+    headless: Boolean(entrypoint) && entrypoint !== "cli",
+    startedAt: stat.birthtime.toISOString(),
+    updatedAt: stat.mtime.toISOString(),
+  };
+}
+
+async function listClaudeSessions({ includeExec }) {
+  const out = [];
+  for await (const file of claudeSessionFiles(path.join(CLAUDE_HOME, "projects"))) {
+    const s = await readClaudeMeta(file);
+    if (s && (includeExec || !s.headless)) out.push(s);
+  }
+  return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/** Only what the server needs: the message rows plus the title rows. Tool calls stay here. */
+async function claudeUploadRows(file) {
+  const rows = [];
+  for await (const row of jsonLines(file)) {
+    if (isClaudeMessageRow(row) || row.type === "ai-title" || row.type === "summary") rows.push(row);
+  }
+  return rows;
+}
+
+// ---------- `codex` / `claude` commands ----------
+
+/** The two CLIs differ only in where their logs live, how they are read, and which route takes them. */
+const TOOLS = {
+  codex: {
+    label: "Codex",
+    home: CODEX_HOME,
+    route: "/api/import/codex",
+    list: listSessions,
+    rows: uploadRows,
+    noun: "thread",
+    hiddenHint: "Headless `codex exec` runs are hidden — add --include-exec to see them.",
+  },
+  claude: {
+    label: "Claude Code",
+    home: CLAUDE_HOME,
+    route: "/api/import/claude-code",
+    list: listClaudeSessions,
+    rows: claudeUploadRows,
+    noun: "session",
+    hiddenHint: "Headless `claude -p` runs are hidden — add --include-exec to see them.",
+  },
+};
 
 function describe(s, i, imported) {
   const n = `${String(i + 1).padStart(3)}. `;
@@ -285,11 +425,11 @@ function describe(s, i, imported) {
   return `${n}${mark} ${short(s.id)}  ${when(s.updatedAt)}  ${s.kind.padEnd(4)}  ${s.title || "(untitled)"}\n${" ".repeat(n.length + 2)}${s.cwd}`;
 }
 
-async function pick(sessions, imported, opts) {
+async function pick(tool, sessions, imported, opts) {
   const shown = sessions.slice(0, opts.limit);
   const count = shown.length < sessions.length ? `${shown.length} of ${sessions.length}` : `${sessions.length}`;
-  console.log(`Codex sessions in ${CODEX_HOME} (newest first, ${count}; ✓ = already imported)`);
-  console.log(opts.includeExec ? "" : "Headless `codex exec` runs are hidden — add --include-exec to see them.\n");
+  console.log(`${tool.label} ${tool.noun}s in ${tool.home} (newest first, ${count}; ✓ = already imported)`);
+  console.log(opts.includeExec ? "" : `${tool.hiddenHint}\n`);
   shown.forEach((s, i) => console.log(describe(s, i, imported)));
   if (opts.list) return [];
   const answer = await ask("\nImport which? (numbers, e.g. 1 3-5, or 'all'; empty to quit) ");
@@ -304,25 +444,31 @@ async function pick(sessions, imported, opts) {
   return shown.filter((_, i) => chosen.has(i));
 }
 
-function byId(sessions, ids) {
+function byId(tool, sessions, ids) {
   return ids.map((id) => {
     const hits = sessions.filter((s) => s.id === id || s.id.startsWith(id));
     if (hits.length === 1) return hits[0];
-    fail(hits.length ? `"${id}" matches ${hits.length} sessions; be more specific` : `No Codex session "${id}"`);
+    fail(
+      hits.length
+        ? `"${id}" matches ${hits.length} ${tool.noun}s; be more specific`
+        : `No ${tool.label} ${tool.noun} "${id}"`,
+    );
   });
 }
 
-async function codex(ids, opts) {
+async function runImport(tool, ids, opts) {
   const cfg = await readConfig();
-  const { imported } = await api(cfg, "/api/import/codex");
-  const sessions = await listSessions(opts);
-  if (!sessions.length) fail(`No Codex sessions found under ${CODEX_HOME}${opts.includeExec ? "" : " (try --include-exec)"}`);
+  const { imported } = await api(cfg, tool.route);
+  const sessions = await tool.list(opts);
+  if (!sessions.length) {
+    fail(`No ${tool.label} ${tool.noun}s found under ${tool.home}${opts.includeExec ? "" : " (try --include-exec)"}`);
+  }
 
   let selected;
-  if (ids.length) selected = byId(sessions, ids);
+  if (ids.length) selected = byId(tool, sessions, ids);
   else if (opts.latest) selected = [sessions[0]];
   else if (opts.all) selected = sessions;
-  else selected = await pick(sessions, imported, opts);
+  else selected = await pick(tool, sessions, imported, opts);
   if (!selected.length) return;
 
   let done = 0;
@@ -333,10 +479,10 @@ async function codex(ids, opts) {
       skipped++;
       continue;
     }
-    const rows = await uploadRows(s.file);
+    const rows = await tool.rows(s.file);
     let r;
     try {
-      r = await api(cfg, "/api/import/codex", {
+      r = await api(cfg, tool.route, {
         method: "POST",
         body: JSON.stringify({
           session: { id: s.id, name: s.name, cwd: s.cwd, startedAt: s.startedAt, updatedAt: s.updatedAt },
@@ -376,18 +522,24 @@ const { values, positionals } = parseArgs({
 const [command, ...rest] = positionals;
 
 if (values.help || !command) {
-  console.log(`next-mem0-sync — import Codex CLI chats into next-mem0
+  console.log(`next-mem0-sync — import Codex CLI and Claude Code chats into next-mem0
 
   node next-mem0-sync.mjs login [server-url]
-  node next-mem0-sync.mjs codex [--latest | --all | --list | <thread-id>…] [--replace] [--limit N] [--include-exec]
+  node next-mem0-sync.mjs codex  [--latest | --all | --list | <session-id>…] [--replace] [--limit N] [--include-exec]
+  node next-mem0-sync.mjs claude [--latest | --all | --list | <session-id>…] [--replace] [--limit N] [--include-exec]
   node next-mem0-sync.mjs status
   node next-mem0-sync.mjs logout`);
   process.exit(values.help ? 0 : 1);
 }
 
 try {
+  const opts = {
+    ...values,
+    includeExec: values["include-exec"],
+    limit: values.limit ? Math.max(1, Number(values.limit) || Infinity) : Infinity,
+  };
   if (command === "login") await login(rest[0]);
-  else if (command === "codex") await codex(rest, { ...values, includeExec: values["include-exec"], limit: values.limit ? Math.max(1, Number(values.limit) || Infinity) : Infinity });
+  else if (TOOLS[command]) await runImport(TOOLS[command], rest, opts);
   else if (command === "status") await status();
   else if (command === "logout") await logout();
   else fail(`Unknown command "${command}". Try --help`);

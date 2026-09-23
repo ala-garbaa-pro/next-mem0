@@ -16,7 +16,18 @@ export const SITES = [
       return m ? `chatgpt:${m[1]}` : null;
     },
   },
-  // { id: "claude",  label: "Claude",  source: "claude",  script: "content/claude.js",  match(url) { ... } },
+  {
+    id: "claude",
+    label: "Claude",
+    source: "claude",
+    script: "content/claude.js",
+    match(url) {
+      const u = new URL(url);
+      if (!/^(claude\.ai|www\.claude\.ai)$/.test(u.hostname)) return null;
+      const m = /\/chat\/([0-9a-f-]{20,})/i.exec(u.pathname) ?? /\/share\/([0-9a-f-]{20,})/i.exec(u.pathname);
+      return m ? `claude:${m[1]}` : null;
+    },
+  },
   // { id: "gemini",  label: "Gemini",  source: "gemini",  script: "content/gemini.js",  match(url) { ... } },
 ];
 

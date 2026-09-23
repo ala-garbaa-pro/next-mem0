@@ -3,15 +3,28 @@ import { buttonVariants } from "@/components/ui/button";
 import { CopyButton } from "@/components/copy-button";
 
 const STEPS = (origin: string) => [
-  { title: "Sign in once", cmd: `node next-mem0-sync.mjs login ${origin}`, note: "Your session is saved in ~/.next-mem0 — the password is not." },
-  { title: "Pick the chats", cmd: "node next-mem0-sync.mjs codex", note: "Lists the threads in ~/.codex/sessions; --latest, --all or a thread id skip the picker." },
+  {
+    title: "Sign in once",
+    cmd: `node next-mem0-sync.mjs login ${origin}`,
+    note: "Your session is saved in ~/.next-mem0 — the password is not.",
+  },
+  {
+    title: "Pick the chats",
+    cmd: "node next-mem0-sync.mjs codex",
+    note: "Lists the threads in ~/.codex/sessions; --latest, --all or a session id skip the picker.",
+  },
+  {
+    title: "…and the Claude Code ones",
+    cmd: "node next-mem0-sync.mjs claude",
+    note: "Same picker over ~/.claude/projects. Takes the same flags.",
+  },
 ];
 
 /**
- * "Import from the Codex CLI" — the chats live in ~/.codex on the user's machine, so a tiny
- * program has to run there and upload them. It is served from public/ and needs only Node.
+ * "Import from your CLIs" — the chats live in ~/.codex and ~/.claude on the user's machine, so a
+ * tiny program has to run there and upload them. It is served from public/ and needs only Node.
  */
-export function CodexSyncCard({ origin }: { origin: string }) {
+export function CliSyncCard({ origin }: { origin: string }) {
   return (
     <section className="glass relative overflow-hidden rounded-2xl p-5">
       <span className="absolute inset-x-0 top-0 h-0.5 [background:linear-gradient(90deg,var(--vivid-a),var(--vivid-b),transparent)]" />
@@ -21,10 +34,11 @@ export function CodexSyncCard({ origin }: { origin: string }) {
             <TerminalIcon className="size-4.5" />
           </span>
           <div>
-            <h2 className="font-heading text-base font-semibold tracking-tight">From the Codex CLI</h2>
+            <h2 className="font-heading text-base font-semibold tracking-tight">From the Codex and Claude Code CLIs</h2>
             <p className="mt-0.5 max-w-xl text-sm text-muted-foreground">
-              Chats with <span className="font-mono text-xs">codex</span> in your terminal stay on your machine, so a
-              small program runs there and sends them here. One file, no install — just Node 20+.
+              Chats with <span className="font-mono text-xs">codex</span> and{" "}
+              <span className="font-mono text-xs">claude</span> in your terminal stay on your machine, so a small
+              program runs there and sends them here. One file, no install — just Node 20+.
             </p>
           </div>
         </div>
@@ -34,7 +48,7 @@ export function CodexSyncCard({ origin }: { origin: string }) {
         </a>
       </div>
 
-      <ol className="mt-5 grid gap-3 sm:grid-cols-2">
+      <ol className="mt-5 grid gap-3 sm:grid-cols-3">
         {STEPS(origin).map((s, i) => (
           <li key={s.title} className="rounded-xl border border-glass-border bg-glass p-3.5">
             <p className="flex items-center gap-2 text-sm font-medium">
@@ -53,9 +67,10 @@ export function CodexSyncCard({ origin }: { origin: string }) {
       </ol>
 
       <p className="mt-4 text-xs text-muted-foreground">
-        Only your messages and Codex&apos;s answers are uploaded — reasoning, tool calls and Codex&apos;s own prompt
-        scaffolding are stripped. Each import keeps the Codex thread id, so continuing the chat here resumes that same
-        thread. Re-running skips what is already imported; <span className="font-mono">--replace</span> refreshes it.
+        Only your messages and the assistant&apos;s answers are uploaded — reasoning, tool calls and each CLI&apos;s own
+        prompt scaffolding are stripped. Each import keeps the session id, so continuing the chat here resumes that same
+        session in that same CLI. Re-running skips what is already imported;{" "}
+        <span className="font-mono">--replace</span> refreshes it.
       </p>
     </section>
   );

@@ -36,7 +36,7 @@ async function init() {
 
   if (!detected) {
     $("status").textContent = "Open a conversation to import it.";
-    $("hint").textContent = `Supported: ${SITES.map((s) => s.label).join(", ")}. Claude and Gemini are next.`;
+    $("hint").textContent = `Supported: ${SITES.map((s) => s.label).join(", ")}. Gemini is next.`;
     $("hint").hidden = false;
     return;
   }
@@ -48,7 +48,7 @@ async function init() {
   $("card").hidden = false;
   $("site-badge").textContent = detected.site.label;
   $("site-badge").dataset.source = detected.site.source;
-  $("page-title").textContent = tab.title?.replace(/\s*[|·-]\s*ChatGPT\s*$/i, "") || "Conversation";
+  $("page-title").textContent = tab.title?.replace(/\s*[|·-]\s*(ChatGPT|Claude)\s*$/i, "") || "Conversation";
   renderPrevious();
 }
 
@@ -94,9 +94,14 @@ $("import").addEventListener("click", async () => {
   try {
     showResult("Reading conversation…", "");
     const extracted = await extract();
-    const n = Array.isArray(extracted.conversation.messages)
-      ? extracted.conversation.messages.length
-      : Object.keys(extracted.conversation.mapping ?? {}).length;
+    // Each site hands back its own native shape: a generic message list, ChatGPT's `mapping` tree
+    // or Claude's `chat_messages` array.
+    const c = extracted.conversation;
+    const n = Array.isArray(c.messages)
+      ? c.messages.length
+      : Array.isArray(c.chat_messages)
+        ? c.chat_messages.length
+        : Object.keys(c.mapping ?? {}).length;
     showResult(`Saving to next-mem0 (${n} messages, embedding locally)…`, "");
     const res = await send({
       type: "IMPORT",

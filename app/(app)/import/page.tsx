@@ -1,5 +1,5 @@
 import { headers } from "next/headers";
-import { CodexSyncCard } from "@/components/codex-sync-card";
+import { CliSyncCard } from "@/components/cli-sync-card";
 import { ImportForm } from "@/components/import-form";
 
 /** The URL the sync program should log in to — this deployment, as the browser reached it. */
@@ -25,7 +25,7 @@ export default async function ImportPage() {
 
       <div className="hairline-x" />
 
-      <CodexSyncCard origin={origin} />
+      <CliSyncCard origin={origin} />
     </div>
   );
 }
