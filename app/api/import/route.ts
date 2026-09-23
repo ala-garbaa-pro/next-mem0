@@ -49,7 +49,14 @@ export async function POST(request: Request) {
   }
 
   const convo = await createConversation(user.id, { title: c.title, source: c.source, createdAt: c.createdAt });
-  const msgs = await addMessages(user.id, convo.id, c.messages);
+  let msgs;
+  try {
+    msgs = await addMessages(user.id, convo.id, c.messages);
+  } catch (err) {
+    // Embedding failed (Ollama down, model not pulled): don't leave an empty conversation behind.
+    await deleteConversation(user.id, convo.id);
+    return Response.json({ error: err instanceof Error ? err.message : String(err) }, { status: 503 });
+  }
   revalidatePath("/", "layout");
   return Response.json({
     ok: true,

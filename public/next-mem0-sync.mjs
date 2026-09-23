@@ -334,14 +334,20 @@ async function codex(ids, opts) {
       continue;
     }
     const rows = await uploadRows(s.file);
-    const r = await api(cfg, "/api/import/codex", {
-      method: "POST",
-      body: JSON.stringify({
-        session: { id: s.id, name: s.name, cwd: s.cwd, startedAt: s.startedAt, updatedAt: s.updatedAt },
-        rows,
-        replace: opts.replace,
-      }),
-    });
+    let r;
+    try {
+      r = await api(cfg, "/api/import/codex", {
+        method: "POST",
+        body: JSON.stringify({
+          session: { id: s.id, name: s.name, cwd: s.cwd, startedAt: s.startedAt, updatedAt: s.updatedAt },
+          rows,
+          replace: opts.replace,
+        }),
+      });
+    } catch (err) {
+      // A server-side failure (typically its Ollama is down) would hit every remaining thread too.
+      fail(`failed   ${short(s.id)}  ${err.message}\n\nStopped after ${done} imported, ${skipped} skipped. Fix the server and run the same command again.`);
+    }
     if (r.skipped) {
       console.log(`skip     ${short(s.id)}  already imported → ${r.url}`);
       skipped++;

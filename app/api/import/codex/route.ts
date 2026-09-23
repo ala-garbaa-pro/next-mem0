@@ -90,7 +90,15 @@ export async function POST(request: Request) {
     updatedAt: meta.updatedAt,
     cliSessionId: parsed.cliSessionId,
   });
-  const msgs = await addMessages(user.id, convo.id, parsed.messages);
+  let msgs;
+  try {
+    msgs = await addMessages(user.id, convo.id, parsed.messages);
+  } catch (err) {
+    // Embedding failed (Ollama down, model not pulled): leave nothing behind, or the next run
+    // would report this thread as "already imported" while it holds no messages.
+    await deleteConversation(user.id, convo.id);
+    return Response.json({ error: err instanceof Error ? err.message : String(err) }, { status: 503 });
+  }
   revalidatePath("/", "layout");
   return Response.json({
     ok: true,
