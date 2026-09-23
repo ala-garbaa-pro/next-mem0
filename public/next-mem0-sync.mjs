@@ -580,7 +580,8 @@ function byId(tool, sessions, ids) {
 async function runImport(tool, ids, opts) {
   const cfg = await readConfig();
   const { imported } = await api(cfg, tool.route);
-  const sessions = await tool.list(opts);
+  // Reassigned below when an account is picked, which narrows the list to that one.
+  let sessions = await tool.list(opts);
   if (!sessions.length) {
     fail(`No ${tool.label} ${tool.noun}s found under ${await tool.home()}${opts.includeExec ? "" : " (try --include-exec)"}`);
   }
